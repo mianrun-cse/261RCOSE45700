@@ -13,7 +13,6 @@ load_dotenv()
 
 from db.models import init_db
 from llm_module.state_machine import BayStateMachine, TriggerSignals
-from llm_module.report_generator import generate_daily_report
 from opencv.bridge import run as cv_run
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
@@ -37,7 +36,7 @@ signal_queues: dict[str, asyncio.Queue] = {}
 # ── 루프 ──────────────────────────────────────────────────────────────────────
 
 async def bay_loop(bay_id: str) -> None:
-    machine = BayStateMachine(bay_id, frame_queues[bay_id])
+    machine = BayStateMachine(bay_id, frame_queues[bay_id], all_bay_ids=BAY_IDS)
     while True:
         try:
             signals: TriggerSignals = signal_queues[bay_id].get_nowait()
@@ -49,11 +48,15 @@ async def bay_loop(bay_id: str) -> None:
 
 async def report_loop() -> None:
     import datetime
+    from llm_module.graph import facility_graph
+    from llm_module.state import make_report_state
+
     while True:
         now = datetime.datetime.now()
         if now.hour == CLOSE_HOUR and now.minute == 0:
-            report = await generate_daily_report(BAY_IDS)
-            print("[DAILY REPORT]\n", report)
+            state = make_report_state(bay_id=BAY_IDS[0], all_bay_ids=BAY_IDS)
+            result = await facility_graph.ainvoke(state)
+            print("[DAILY REPORT]\n", result.get("report_text", ""))
             await asyncio.sleep(60)
         await asyncio.sleep(30)
 

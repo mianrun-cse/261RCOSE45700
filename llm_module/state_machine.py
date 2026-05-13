@@ -1,14 +1,13 @@
 """
 VLM 호출 빈도 제어 + 감지 카운트 + cooldown 관리.
 OpenCV 팀원이 trigger_signals를 넘겨주면 이 모듈이 VLM 호출 여부를 결정한다.
+감지 확정 후 dispatch는 LangGraph facility_graph로 위임한다.
 """
 import time
 import asyncio
 from dataclasses import dataclass, field
 from collections import deque
 from llm_module.vlm_analyzer import analyze, DetectionType, AnalysisResult
-from llm_module.alert_manager import handle as alert_handle
-from llm_module.temperature_controller import handle as temp_handle
 from db.models import log_event
 
 INFER_INTERVAL_SEC   = 1.0   # VLM 최소 호출 간격
@@ -40,9 +39,10 @@ class _DetectionState:
 class BayStateMachine:
     """타석 하나의 상태를 관리하는 머신. 타석마다 인스턴스 생성."""
 
-    def __init__(self, bay_id: str, frame_queue: asyncio.Queue):
-        self.bay_id      = bay_id
-        self.frame_queue = frame_queue
+    def __init__(self, bay_id: str, frame_queue: asyncio.Queue, all_bay_ids: list[str] | None = None):
+        self.bay_id        = bay_id
+        self.frame_queue   = frame_queue
+        self._all_bay_ids  = all_bay_ids or [bay_id]
         self._states: dict[DetectionType, _DetectionState] = {
             dt: _DetectionState() for dt in DetectionType
         }
@@ -130,16 +130,27 @@ class BayStateMachine:
             state.detection_times.clear()
 
     async def _dispatch(self, result: AnalysisResult, signals: TriggerSignals) -> None:
-        """감지 확정 후 액션 분기"""
-        await alert_handle(result, self.bay_id)
+        """감지 확정 후 LangGraph 그래프로 위임."""
+        from llm_module.graph import facility_graph
+        from llm_module.state import make_safety_state
 
-        if result.detection_type == DetectionType.SWEAT_WIPING:
-            await temp_handle(
-                bay_id=self.bay_id,
-                temperature=signals.temperature,
-                humidity=signals.humidity,
-                reason=result.evidence,
-            )
+        state = make_safety_state(
+            bay_id=self.bay_id,
+            all_bay_ids=self._all_bay_ids,
+            analysis_result={
+                "detection_type": result.detection_type.value,
+                "detected": result.detected,
+                "confidence": result.confidence,
+                "severity": result.severity.value,
+                "evidence": result.evidence,
+                "action_required": result.action_required,
+            },
+            signals={
+                "temperature": signals.temperature,
+                "humidity": signals.humidity,
+            },
+        )
+        await facility_graph.ainvoke(state)
 
     async def _get_frames(self) -> list:
         """큐에서 최신 프레임 묶음 가져오기. 없으면 빈 리스트."""

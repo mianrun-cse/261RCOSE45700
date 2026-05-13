@@ -1,37 +1,15 @@
 """
-고객 응대 챗봇.
-- 상황 인식 (예약정보 + 센서 + 게임상태) 기반 자연어 응답
-- 자연어 명령 → 환경 제어 API 호출
-- 웹/음성 동시 지원 (텍스트 반환 + TTS 파일 경로 반환)
+고객 응대 챗봇 — LangGraph facility_graph 기반.
+- 고객 요청을 customer 에이전트 노드로 라우팅
+- 크로스베이 요청은 오케스트레이터가 자동 처리
+- closing_notice / extension_offer는 단순 TTS라 그래프 미사용
 """
-import os
 import asyncio
-import json
 import pathlib
-from openai import OpenAI
-from llm_module.temperature_controller import apply_customer_pref, handle as temp_handle
 from llm_module.coaching_engine import _tts
 
-client = OpenAI()
 AUDIO_DIR = pathlib.Path("audio_cache")
 AUDIO_DIR.mkdir(exist_ok=True)
-
-SYSTEM_PROMPT = """
-당신은 무인 스크린골프장의 AI 안내 도우미입니다.
-고객의 요청에 친절하고 간결하게 한국어로 답변하세요.
-환경 제어(온도, 조명, 팬)가 필요한 경우 반드시 JSON action을 포함하세요.
-답변은 두 부분으로 구성하세요:
-1. "message": 고객에게 보여줄 자연스러운 안내 문장
-2. "action": 실행할 환경 제어 명령 (없으면 null)
-
-action 형식:
-{
-  "type": "temperature" | "fan" | "light" | "extend_time" | "none",
-  "value": <값>
-}
-
-반드시 JSON으로만 응답하세요.
-"""
 
 
 async def respond(
@@ -39,6 +17,7 @@ async def respond(
     bay_id: str,
     context: dict,
     tts: bool = True,
+    all_bay_ids: list[str] | None = None,
 ) -> dict:
     """
     user_message: 고객이 입력한 텍스트 or 음성 인식 결과
@@ -52,55 +31,28 @@ async def respond(
     }
     반환: {"message": str, "audio_path": str | None, "action": dict | None}
     """
-    context_str = json.dumps(context, ensure_ascii=False)
-    user_content = f"[현재 상황]\n{context_str}\n\n[고객 요청]\n{user_message}"
+    from llm_module.graph import facility_graph
+    from llm_module.state import make_customer_state
 
-    raw = await asyncio.to_thread(
-        client.chat.completions.create,
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user",   "content": user_content},
-        ],
-        response_format={"type": "json_object"},
-        max_tokens=200,
+    state = make_customer_state(
+        bay_id=bay_id,
+        all_bay_ids=all_bay_ids or [bay_id],
+        user_message=user_message,
+        customer_context=context,
     )
 
-    data = json.loads(raw.choices[0].message.content)
-    message = data.get("message", "")
-    action  = data.get("action")
+    result_state = await facility_graph.ainvoke(state)
+    bot_response = result_state.get("bot_response") or {}
 
-    # 환경 제어 실행
-    if action and action.get("type") != "none":
-        await _execute_action(action, bay_id, context)
+    # tts=False 요청 시 오디오 경로 제거
+    if not tts:
+        bot_response = {**bot_response, "audio_path": None}
 
-    audio_path = None
-    if tts and message:
-        filename = f"bot_{bay_id}_{abs(hash(message))}.mp3"
-        audio_path = str(await _tts(message, filename))
-
-    print(f"[{bay_id}][BOT] {message}")
-    return {"message": message, "audio_path": audio_path, "action": action}
-
-
-async def _execute_action(action: dict, bay_id: str, context: dict) -> None:
-    action_type = action.get("type")
-    value       = action.get("value")
-
-    if action_type == "temperature":
-        current = context.get("current_temp", 24.0)
-        delta   = float(value) - current
-        await temp_handle(bay_id, current, 0, reason="고객 요청", target_temp_delta=delta)
-
-    elif action_type == "fan":
-        pass  # 환경 API 직접 호출 (temperature_controller 확장 시 추가)
-
-    elif action_type == "light":
-        pass
+    return bot_response
 
 
 async def closing_notice(bay_id: str, remaining_min: int, context: dict) -> dict:
-    """이용 종료 N분 전 자동 안내"""
+    """이용 종료 N분 전 자동 안내 (그래프 미사용 — 단순 TTS)"""
     msg = f"안내 말씀드립니다. {remaining_min}분 후 이용 시간이 종료됩니다. 연장을 원하시면 '연장'이라고 말씀해주세요."
     filename = f"closing_{bay_id}_{remaining_min}.mp3"
     audio_path = str(await _tts(msg, filename))
