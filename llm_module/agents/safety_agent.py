@@ -60,6 +60,7 @@ async def _reanalyze_with_better_model(
 
 
 async def safety_node(state: FacilityState) -> dict:
+    print(f"[AGENT: safety] bay={state['bay_id']}")
     result_dict = state.get("analysis_result") or {}
     if not result_dict:
         return {}

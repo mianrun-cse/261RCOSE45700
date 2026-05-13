@@ -10,6 +10,7 @@ _ANOMALY_KEYWORDS = ["이상", "위험", "응급", "도난", "파손", "주의",
 
 
 async def report_node(state: FacilityState) -> dict:
+    print(f"[AGENT: report] bays={state.get('all_bay_ids')}")
     all_bay_ids = state.get("all_bay_ids") or []
     report = await generate_daily_report(all_bay_ids)
 

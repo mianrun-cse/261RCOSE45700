@@ -4,6 +4,7 @@ from llm_module.coaching_engine import posture_feedback
 
 
 async def coaching_node(state: FacilityState) -> dict:
+    print(f"[AGENT: coaching] bay={state['bay_id']}")
     pose_keypoints = state.get("pose_keypoints") or {}
     bay_id = state["bay_id"]
     audio_path = await posture_feedback(pose_keypoints, bay_id)

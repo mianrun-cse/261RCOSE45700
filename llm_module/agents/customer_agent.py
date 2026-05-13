@@ -40,6 +40,7 @@ _CROSS_BAY_KEYWORDS = ["전체", "모든 타석", "전관", "전부", "모든 �
 
 
 async def customer_node(state: FacilityState) -> dict:
+    print(f"[AGENT: customer] bay={state['bay_id']}")
     bay_id = state["bay_id"]
     user_message = state.get("user_message") or ""
     context = state.get("customer_context") or {}

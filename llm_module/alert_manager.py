@@ -151,7 +151,10 @@ async def handle(result: AnalysisResult, bay_id: str = "1번 타석") -> None:
     if policy["sms"]:
         tasks.append(_send_sms(message))
 
-    await asyncio.gather(*tasks)
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    for r in results:
+        if isinstance(r, Exception):
+            print(f"[ALERT 발송 실패] {type(r).__name__}: {r}")
 
 
 # ── 일일 리포트용 로그 조회 ───────────────────────────────────────────────────────

@@ -68,10 +68,8 @@ async def test_report_generator():
     print("\n" + "="*50)
     print("[ 일일 리포트 테스트 ]")
     print("="*50)
-    from db.models import init_db
     from llm_module.report_generator import generate_daily_report
 
-    await init_db()
     report = await generate_daily_report(["1번 타석", "2번 타석", "3번 타석"])
     print(report)
 
@@ -108,24 +106,78 @@ async def test_alert_manager():
     await handle(result2, "1번 타석")
 
 
+async def test_multi_agent():
+    """
+    멀티에이전트 협력 시나리오 테스트.
+    [AGENT: xxx] 로그로 어떤 에이전트가 실행됐는지 확인 가능.
+    """
+    print("\n" + "="*50)
+    print("[ 멀티에이전트 시나리오 테스트 ]")
+    print("="*50)
+    from llm_module.graph import facility_graph
+    from llm_module.state import make_customer_state, make_safety_state
+
+    BAY_IDS = ["1번 타석", "2번 타석", "3번 타석"]
+
+    # ── 시나리오 1: 단일 베이 요청 → customer 에이전트만 실행 ──────────────────
+    print("\n[시나리오 1] 단일 베이 요청 (오케스트레이터 미개입 예상)")
+    print("  기대 경로: customer → END")
+    state = make_customer_state("1번 타석", BAY_IDS, "온도 좀 낮춰줘", {"current_temp": 27.0}, tts_enabled=False)
+    result = await facility_graph.ainvoke(state)
+    print(f"  응답: {result.get('bot_response', {}).get('message', '')}")
+    print(f"  오케스트레이터 결정: {result.get('orchestrator_decision', '(미실행)')}")
+
+    # ── 시나리오 2: 전체 타석 요청 → customer → orchestrator ──────────────────
+    print("\n[시나리오 2] 전체 타석 요청 (오케스트레이터 개입 예상)")
+    print("  기대 경로: customer → orchestrator → END")
+    state2 = make_customer_state("1번 타석", BAY_IDS, "전체 타석 온도 22도로 맞춰줘", {"current_temp": 27.0}, tts_enabled=False)
+    result2 = await facility_graph.ainvoke(state2)
+    print(f"  응답: {result2.get('bot_response', {}).get('message', '')}")
+    print(f"  오케스트레이터 결정: {result2.get('orchestrator_decision', '(미실행)')}")
+
+    # ── 시나리오 3: 고위험 불확실 안전 감지 → safety → orchestrator ──────────
+    print("\n[시나리오 3] 고위험 불확실 감지 (오케스트레이터 개입 예상)")
+    print("  기대 경로: safety → orchestrator → END")
+    state3 = make_safety_state(
+        bay_id="2번 타석",
+        all_bay_ids=BAY_IDS,
+        analysis_result={
+            "detection_type": "fall_emergency",
+            "detected": True,
+            "confidence": 0.72,   # 0.80 미만 → 오케스트레이터 위임
+            "severity": "high",
+            "evidence": "Person lying on floor, unclear if intentional",
+            "action_required": "Verify with customer or manager",
+        },
+        signals={"temperature": 25.0, "humidity": 60.0},
+    )
+    result3 = await facility_graph.ainvoke(state3)
+    print(f"  충돌 감지됨: {state3.get('conflict_detected', False)}")
+    print(f"  오케스트레이터 결정: {result3.get('orchestrator_decision', '(미실행)')}")
+
+
 # ── 메뉴 ──────────────────────────────────────────────────────────────────────
 
 TESTS = {
-    "1": ("고객 응대 챗봇",   test_customer_bot),
-    "2": ("자세 피드백 + TTS", test_coaching_engine),
-    "3": ("일일 리포트",      test_report_generator),
-    "4": ("관리자 알림",      test_alert_manager),
-    "5": ("전체 실행",        None),
+    "1": ("고객 응대 챗봇",         test_customer_bot),
+    "2": ("자세 피드백 + TTS",       test_coaching_engine),
+    "3": ("일일 리포트",             test_report_generator),
+    "4": ("관리자 알림",             test_alert_manager),
+    "5": ("멀티에이전트 시나리오",    test_multi_agent),
+    "6": ("전체 실행",               None),
 }
 
 async def main():
+    from db.models import init_db
+    await init_db()
+
     print("\n테스트할 모듈을 선택하세요:")
     for k, (name, _) in TESTS.items():
         print(f"  [{k}] {name}")
 
     choice = input("\n선택: ").strip()
 
-    if choice == "5":
+    if choice == "6":
         for k, (name, fn) in TESTS.items():
             if fn:
                 await fn()
