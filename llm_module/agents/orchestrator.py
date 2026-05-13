@@ -43,7 +43,7 @@ async def _judge_cross_bay(action: dict, bay_id: str) -> dict:
     )
     raw = await asyncio.to_thread(
         client.chat.completions.create,
-        model="gpt-4o-mini",
+        model="gpt-4o",
         messages=[
             {"role": "system", "content": _CROSS_BAY_SYSTEM},
             {"role": "user",   "content": user_content},
