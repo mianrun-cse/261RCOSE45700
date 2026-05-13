@@ -39,16 +39,11 @@ async def respond(
         all_bay_ids=all_bay_ids or [bay_id],
         user_message=user_message,
         customer_context=context,
+        tts_enabled=tts,
     )
 
     result_state = await facility_graph.ainvoke(state)
-    bot_response = result_state.get("bot_response") or {}
-
-    # tts=False 요청 시 오디오 경로 제거
-    if not tts:
-        bot_response = {**bot_response, "audio_path": None}
-
-    return bot_response
+    return result_state.get("bot_response") or {}
 
 
 async def closing_notice(bay_id: str, remaining_min: int, context: dict) -> dict:

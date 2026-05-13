@@ -72,7 +72,7 @@ async def customer_node(state: FacilityState) -> dict:
         await _execute_action(action, bay_id, context)
 
     audio_path = None
-    if message:
+    if message and state.get("tts_enabled", True):
         filename = f"bot_{bay_id}_{abs(hash(message))}.mp3"
         audio_path = str(await _tts(message, filename))
 
