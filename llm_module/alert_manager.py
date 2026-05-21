@@ -108,7 +108,7 @@ async def _send_push(title: str, body: str) -> None:
 
 # ── 메인 진입점 ───────────────────────────────────────────────────────────────────
 
-async def handle(result: AnalysisResult, bay_id: str = "1번 타석") -> None:
+async def handle(result: AnalysisResult, zone_id: str = "1번 구역") -> None:
     """
     vlm_analyzer.analyze()의 결과를 받아 알림 처리.
     감지되지 않은 경우는 로그만 남기고 종료.
@@ -138,7 +138,7 @@ async def handle(result: AnalysisResult, bay_id: str = "1번 타석") -> None:
     event.alerted = True
 
     message = (
-        f"[무인골프장 알림] {bay_id}\n"
+        f"[무인 매장 알림] {zone_id}\n"
         f"유형: {label}\n"
         f"신뢰도: {result.confidence:.0%}\n"
         f"근거: {result.evidence}\n"

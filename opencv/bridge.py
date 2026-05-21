@@ -43,7 +43,7 @@ def _hand_near_face(hand_results, face_region, frame_shape, margin_ratio=0.6) ->
 
 
 def _run_detection_loop(
-    bay_id: str,
+    zone_id: str,
     frame_queue: asyncio.Queue,
     signal_queue: asyncio.Queue,
     loop: asyncio.AbstractEventLoop,
@@ -67,10 +67,10 @@ def _run_detection_loop(
 
     cap = cv2.VideoCapture(camera_index)
     if not cap.isOpened():
-        print(f"[{bay_id}][BRIDGE] 카메라({camera_index}) 열기 실패")
+        print(f"[{zone_id}][BRIDGE] 카메라({camera_index}) 열기 실패")
         return
 
-    print(f"[{bay_id}][BRIDGE] 카메라 시작")
+    print(f"[{zone_id}][BRIDGE] 카메라 시작")
 
     # 상태 변수 (face_detection.py와 동일)
     last_face_region    = None
@@ -156,7 +156,7 @@ def _run_detection_loop(
                             (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
                 cv2.putText(display, f"faces: {len(faces)}", (10, 100),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
-                cv2.imshow(f"Bridge - {bay_id}", display)
+                cv2.imshow(f"Bridge - {zone_id}", display)
                 if cv2.waitKey(1) & 0xFF == ord('q'):
                     break
 
@@ -186,7 +186,7 @@ def _run_detection_loop(
     finally:
         cap.release()
         hands_detector.__exit__(None, None, None)
-        print(f"[{bay_id}][BRIDGE] 카메라 종료")
+        print(f"[{zone_id}][BRIDGE] 카메라 종료")
 
 
 async def _put_nowait(queue: asyncio.Queue, item) -> None:
@@ -200,7 +200,7 @@ async def _put_nowait(queue: asyncio.Queue, item) -> None:
 
 
 async def run(
-    bay_id: str,
+    zone_id: str,
     frame_queue: asyncio.Queue,
     signal_queue: asyncio.Queue,
     camera_index: int = 0,
@@ -209,5 +209,5 @@ async def run(
     loop = asyncio.get_running_loop()
     await asyncio.to_thread(
         _run_detection_loop,
-        bay_id, frame_queue, signal_queue, loop, camera_index,
+        zone_id, frame_queue, signal_queue, loop, camera_index,
     )

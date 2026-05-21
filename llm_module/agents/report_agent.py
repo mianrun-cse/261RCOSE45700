@@ -1,7 +1,7 @@
 """
-보고서 에이전트 노드.
+보고서 에이전트 노드 (결정 전용).
 - 일일 리포트 생성 후 이상 패턴(위험/도난/파손 키워드) 감지 시 오케스트레이터에 보고.
-- 분석과 인사이트 생성만 담당; 알림 발송은 오케스트레이터 책임.
+- 분석과 인사이트 생성만 담당; 알림 발송은 actuator 책임.
 """
 from llm_module.state import FacilityState
 from llm_module.report_generator import generate_daily_report
@@ -10,9 +10,9 @@ _ANOMALY_KEYWORDS = ["이상", "위험", "응급", "도난", "파손", "주의",
 
 
 async def report_node(state: FacilityState) -> dict:
-    print(f"[AGENT: report] bays={state.get('all_bay_ids')}")
-    all_bay_ids = state.get("all_bay_ids") or []
-    report = await generate_daily_report(all_bay_ids)
+    print(f"[AGENT: report] zones={state.get('all_zone_ids')}")
+    all_zone_ids = state.get("all_zone_ids") or []
+    report = await generate_daily_report(all_zone_ids)
 
     anomaly = any(kw in report for kw in _ANOMALY_KEYWORDS)
 

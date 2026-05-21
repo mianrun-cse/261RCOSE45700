@@ -2,7 +2,7 @@ import os
 import aiosqlite
 from datetime import datetime
 
-DB_PATH = os.getenv("DB_PATH", "golf.db")
+DB_PATH = os.getenv("DB_PATH", "store.db")
 
 
 async def init_db() -> None:
@@ -20,16 +20,16 @@ async def init_db() -> None:
             CREATE TABLE IF NOT EXISTS visits (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
                 customer_id INTEGER REFERENCES customers(id),
-                bay_id      TEXT NOT NULL,
+                zone_id     TEXT NOT NULL,
                 started_at  TEXT NOT NULL,
                 ended_at    TEXT,
-                swing_count INTEGER DEFAULT 0,
+                activity_count INTEGER DEFAULT 0,
                 duration_min REAL DEFAULT 0
             );
 
             CREATE TABLE IF NOT EXISTS events (
                 id              INTEGER PRIMARY KEY AUTOINCREMENT,
-                bay_id          TEXT NOT NULL,
+                zone_id         TEXT NOT NULL,
                 event_type      TEXT NOT NULL,
                 severity        TEXT NOT NULL,
                 confidence      REAL,
@@ -40,7 +40,7 @@ async def init_db() -> None:
 
             CREATE TABLE IF NOT EXISTS env_logs (
                 id          INTEGER PRIMARY KEY AUTOINCREMENT,
-                bay_id      TEXT NOT NULL,
+                zone_id     TEXT NOT NULL,
                 temperature REAL,
                 humidity    REAL,
                 action      TEXT,
@@ -89,27 +89,27 @@ async def update_pref_temp(phone: str, temp: float) -> None:
 
 # ── 방문 ──────────────────────────────────────────────────────────────────────
 
-async def start_visit(customer_id: int, bay_id: str) -> int:
+async def start_visit(customer_id: int, zone_id: str) -> int:
     async with aiosqlite.connect(DB_PATH) as db:
         cursor = await db.execute(
-            "INSERT INTO visits (customer_id, bay_id, started_at) VALUES (?, ?, ?)",
-            (customer_id, bay_id, datetime.now().isoformat()),
+            "INSERT INTO visits (customer_id, zone_id, started_at) VALUES (?, ?, ?)",
+            (customer_id, zone_id, datetime.now().isoformat()),
         )
         await db.commit()
         return cursor.lastrowid
 
 
-async def end_visit(visit_id: int, swing_count: int) -> None:
+async def end_visit(visit_id: int, activity_count: int) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """
-            UPDATE visits SET ended_at = ?, swing_count = ?,
+            UPDATE visits SET ended_at = ?, activity_count = ?,
                 duration_min = ROUND(
                     (JULIANDAY(?) - JULIANDAY(started_at)) * 1440, 1
                 )
             WHERE id = ?
             """,
-            (datetime.now().isoformat(), swing_count, datetime.now().isoformat(), visit_id),
+            (datetime.now().isoformat(), activity_count, datetime.now().isoformat(), visit_id),
         )
         await db.commit()
 
@@ -117,7 +117,7 @@ async def end_visit(visit_id: int, swing_count: int) -> None:
 # ── 이벤트 로그 ───────────────────────────────────────────────────────────────
 
 async def log_event(
-    bay_id: str,
+    zone_id: str,
     event_type: str,
     severity: str,
     confidence: float,
@@ -127,10 +127,10 @@ async def log_event(
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             """
-            INSERT INTO events (bay_id, event_type, severity, confidence, evidence, alerted, occurred_at)
+            INSERT INTO events (zone_id, event_type, severity, confidence, evidence, alerted, occurred_at)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (bay_id, event_type, severity, confidence, evidence, int(alerted), datetime.now().isoformat()),
+            (zone_id, event_type, severity, confidence, evidence, int(alerted), datetime.now().isoformat()),
         )
         await db.commit()
 
@@ -149,22 +149,22 @@ async def get_today_events() -> list[dict]:
 
 # ── 환경 로그 ─────────────────────────────────────────────────────────────────
 
-async def log_env(bay_id: str, temperature: float, humidity: float, action: str) -> None:
+async def log_env(zone_id: str, temperature: float, humidity: float, action: str) -> None:
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
-            "INSERT INTO env_logs (bay_id, temperature, humidity, action, occurred_at) VALUES (?, ?, ?, ?, ?)",
-            (bay_id, temperature, humidity, action, datetime.now().isoformat()),
+            "INSERT INTO env_logs (zone_id, temperature, humidity, action, occurred_at) VALUES (?, ?, ?, ?, ?)",
+            (zone_id, temperature, humidity, action, datetime.now().isoformat()),
         )
         await db.commit()
 
 
-async def get_today_env_logs(bay_id: str) -> list[dict]:
+async def get_today_env_logs(zone_id: str) -> list[dict]:
     today = datetime.now().strftime("%Y-%m-%d")
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
-            "SELECT * FROM env_logs WHERE bay_id = ? AND occurred_at LIKE ? ORDER BY occurred_at",
-            (bay_id, f"{today}%"),
+            "SELECT * FROM env_logs WHERE zone_id = ? AND occurred_at LIKE ? ORDER BY occurred_at",
+            (zone_id, f"{today}%"),
         )
         rows = await cursor.fetchall()
         return [dict(r) for r in rows]

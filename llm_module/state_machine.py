@@ -20,11 +20,11 @@ CONFIDENCE_THRESHOLD = 0.70
 class TriggerSignals:
     """OpenCV 팀원이 채워서 넘겨주는 신호 구조체"""
     sweat_wiping:     bool = False   # 손/수건이 얼굴 근처 반복 이동
-    theft:            bool = False   # 손이 장비 보관 구역 근접
+    theft:            bool = False   # 손이 상품/보관 구역 근접
     property_damage:  bool = False   # 빠른 충격성 움직임 감지
     fall_emergency:   bool = False   # 수평 자세 + 정지
-    person_count:     int  = 0       # 타석 내 인원 수
-    swing_count:      int  = 0       # 누적 스윙 횟수
+    person_count:     int  = 0       # 구역 내 인원 수
+    activity_count:   int  = 0       # 누적 활동 횟수
     temperature:      float = 0.0   # 현재 온도 (센서)
     humidity:         float = 0.0   # 현재 습도 (센서)
 
@@ -36,13 +36,13 @@ class _DetectionState:
     cooldown_until: float  = 0
 
 
-class BayStateMachine:
-    """타석 하나의 상태를 관리하는 머신. 타석마다 인스턴스 생성."""
+class ZoneStateMachine:
+    """구역 하나의 상태를 관리하는 머신. 구역마다 인스턴스 생성."""
 
-    def __init__(self, bay_id: str, frame_queue: asyncio.Queue, all_bay_ids: list[str] | None = None):
-        self.bay_id        = bay_id
+    def __init__(self, zone_id: str, frame_queue: asyncio.Queue, all_zone_ids: list[str] | None = None):
+        self.zone_id       = zone_id
         self.frame_queue   = frame_queue
-        self._all_bay_ids  = all_bay_ids or [bay_id]
+        self._all_zone_ids = all_zone_ids or [zone_id]
         self._states: dict[DetectionType, _DetectionState] = {
             dt: _DetectionState() for dt in DetectionType
         }
@@ -76,9 +76,9 @@ class BayStateMachine:
             await asyncio.gather(*tasks)
 
         # 움직임 없음 안전 확인 (30분)
-        if signals.swing_count == 0 and signals.person_count > 0:
+        if signals.activity_count == 0 and signals.person_count > 0:
             if time.time() - self._last_still_time > 1800:
-                print(f"[{self.bay_id}] 장시간 정지 감지 — 안전 확인 음성 출력")
+                print(f"[{self.zone_id}] 장시간 정지 감지 — 안전 확인 음성 출력")
                 self._last_still_time = time.time()
         else:
             self._last_still_time = time.time()
@@ -99,11 +99,11 @@ class BayStateMachine:
         try:
             result: AnalysisResult = await analyze(frames, dt, CONFIDENCE_THRESHOLD)
         except Exception as e:
-            print(f"[{self.bay_id}][VLM ERROR] {dt.value}: {e}")
+            print(f"[{self.zone_id}][VLM ERROR] {dt.value}: {e}")
             return
 
         await log_event(
-            bay_id=self.bay_id,
+            zone_id=self.zone_id,
             event_type=dt.value,
             severity=result.severity.value,
             confidence=result.confidence,
@@ -119,14 +119,14 @@ class BayStateMachine:
             state.detection_times.popleft()
 
         count = len(state.detection_times)
-        print(f"[{self.bay_id}][{dt.value}] conf={result.confidence:.2f} count={count}/{TRIGGER_COUNT} (최근 {TRIGGER_WINDOW_SEC:.0f}초)")
+        print(f"[{self.zone_id}][{dt.value}] conf={result.confidence:.2f} count={count}/{TRIGGER_COUNT} (최근 {TRIGGER_WINDOW_SEC:.0f}초)")
 
         if count >= TRIGGER_COUNT:
             if now >= state.cooldown_until:
                 await self._dispatch(result, signals)
                 state.cooldown_until = now + 120
             else:
-                print(f"[{self.bay_id}] cooldown 중 — {dt.value} 스킵")
+                print(f"[{self.zone_id}] cooldown 중 — {dt.value} 스킵")
             state.detection_times.clear()
 
     async def _dispatch(self, result: AnalysisResult, signals: TriggerSignals) -> None:
@@ -135,8 +135,8 @@ class BayStateMachine:
         from llm_module.state import make_safety_state
 
         state = make_safety_state(
-            bay_id=self.bay_id,
-            all_bay_ids=self._all_bay_ids,
+            zone_id=self.zone_id,
+            all_zone_ids=self._all_zone_ids,
             analysis_result={
                 "detection_type": result.detection_type.value,
                 "detected": result.detected,

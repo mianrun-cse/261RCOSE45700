@@ -11,16 +11,16 @@ TEMP_MIN = 18.0
 TEMP_MAX = 30.0
 
 
-async def _call_env_api(bay_id: str, payload: dict) -> None:
+async def _call_env_api(zone_id: str, payload: dict) -> None:
     headers = {"Authorization": f"Bearer {ENV_API_KEY}"} if ENV_API_KEY else {}
     async with httpx.AsyncClient(timeout=3.0) as c:
-        r = await c.post(f"{ENV_API_URL}/bay/{bay_id}/environment", json=payload, headers=headers)
+        r = await c.post(f"{ENV_API_URL}/zone/{zone_id}/environment", json=payload, headers=headers)
         r.raise_for_status()
-    print(f"[ENV API][{bay_id}] {payload}")
+    print(f"[ENV API][{zone_id}] {payload}")
 
 
 async def handle(
-    bay_id: str,
+    zone_id: str,
     temperature: float,
     humidity: float,
     reason: str,
@@ -39,16 +39,16 @@ async def handle(
         "reason": reason,
     }
 
-    print(f"[{bay_id}][온도제어] 요청 → 온도 {new_temp}°C / 팬 ON / 조명 dim / 사유: {reason[:40]}")
+    print(f"[{zone_id}][온도제어] 요청 → 온도 {new_temp}°C / 팬 ON / 조명 dim / 사유: {reason[:40]}")
     try:
-        await _call_env_api(bay_id, payload)
+        await _call_env_api(zone_id, payload)
     except Exception as e:
-        print(f"[{bay_id}][온도제어] 실패 → {e}")
+        print(f"[{zone_id}][온도제어] 실패 → {e}")
 
-    await log_env(bay_id, new_temp, humidity, f"auto_cool: {reason[:50]}")
+    await log_env(zone_id, new_temp, humidity, f"auto_cool: {reason[:50]}")
 
 
-async def restore_standby(bay_id: str) -> None:
+async def restore_standby(zone_id: str) -> None:
     """이용자 없을 때 절전 상태로 복귀"""
     payload = {
         "temperature": 26.0,
@@ -57,12 +57,12 @@ async def restore_standby(bay_id: str) -> None:
         "reason": "standby",
     }
     try:
-        await _call_env_api(bay_id, payload)
+        await _call_env_api(zone_id, payload)
     except Exception as e:
-        print(f"[ENV API ERROR][{bay_id}] standby: {e}")
+        print(f"[ENV API ERROR][{zone_id}] standby: {e}")
 
 
-async def apply_customer_pref(bay_id: str, pref_temp: float) -> None:
+async def apply_customer_pref(zone_id: str, pref_temp: float) -> None:
     """DB에 저장된 고객 선호 온도 적용 (VIP 입장 시)"""
     payload = {
         "temperature": max(TEMP_MIN, min(TEMP_MAX, pref_temp)),
@@ -71,6 +71,6 @@ async def apply_customer_pref(bay_id: str, pref_temp: float) -> None:
         "reason": "customer_preference",
     }
     try:
-        await _call_env_api(bay_id, payload)
+        await _call_env_api(zone_id, payload)
     except Exception as e:
-        print(f"[ENV API ERROR][{bay_id}] pref: {e}")
+        print(f"[ENV API ERROR][{zone_id}] pref: {e}")

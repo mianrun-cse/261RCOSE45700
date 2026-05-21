@@ -1,9 +1,9 @@
 """
-무인 스크린골프장 LLM 모듈 진입점.
+무인 매장 LLM 모듈 진입점.
 
 카메라 인덱스 매핑:
-  BAY_CAMERAS = {"1번 타석": 0, "2번 타석": 1, ...}
-  카메라가 없는 타석은 매핑에서 제외하면 bridge가 실행되지 않는다.
+  ZONE_CAMERAS = {"1번 구역": 0, "2번 구역": 1, ...}
+  카메라가 없는 구역은 매핑에서 제외하면 bridge가 실행되지 않는다.
 """
 import asyncio
 import os
@@ -12,22 +12,22 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from db.models import init_db
-from llm_module.state_machine import BayStateMachine, TriggerSignals
+from llm_module.state_machine import ZoneStateMachine, TriggerSignals
 from opencv.bridge import run as cv_run
 
 # ── 설정 ──────────────────────────────────────────────────────────────────────
 
-BAY_IDS    = ["1번 타석", "2번 타석", "3번 타석"]
+ZONE_IDS   = ["1번 구역", "2번 구역", "3번 구역"]
 CLOSE_HOUR = int(os.getenv("CLOSE_HOUR", 22))
 
-# 타석별 카메라 인덱스 (없는 타석은 제외)
-BAY_CAMERAS: dict[str, int] = {
-    "1번 타석": 0,
-    "2번 타석": 1,
-    "3번 타석": 2,
+# 구역별 카메라 인덱스 (없는 구역은 제외)
+ZONE_CAMERAS: dict[str, int] = {
+    "1번 구역": 0,
+    "2번 구역": 1,
+    "3번 구역": 2,
 }
 
-# ── 타석별 큐 ─────────────────────────────────────────────────────────────────
+# ── 구역별 큐 ─────────────────────────────────────────────────────────────────
 
 frame_queues:  dict[str, asyncio.Queue] = {}
 signal_queues: dict[str, asyncio.Queue] = {}
@@ -35,11 +35,11 @@ signal_queues: dict[str, asyncio.Queue] = {}
 
 # ── 루프 ──────────────────────────────────────────────────────────────────────
 
-async def bay_loop(bay_id: str) -> None:
-    machine = BayStateMachine(bay_id, frame_queues[bay_id], all_bay_ids=BAY_IDS)
+async def zone_loop(zone_id: str) -> None:
+    machine = ZoneStateMachine(zone_id, frame_queues[zone_id], all_zone_ids=ZONE_IDS)
     while True:
         try:
-            signals: TriggerSignals = signal_queues[bay_id].get_nowait()
+            signals: TriggerSignals = signal_queues[zone_id].get_nowait()
         except asyncio.QueueEmpty:
             signals = TriggerSignals()
         await machine.update(signals)
@@ -54,7 +54,7 @@ async def report_loop() -> None:
     while True:
         now = datetime.datetime.now()
         if now.hour == CLOSE_HOUR and now.minute == 0:
-            state = make_report_state(bay_id=BAY_IDS[0], all_bay_ids=BAY_IDS)
+            state = make_report_state(zone_id=ZONE_IDS[0], all_zone_ids=ZONE_IDS)
             result = await facility_graph.ainvoke(state)
             print("[DAILY REPORT]\n", result.get("report_text", ""))
             await asyncio.sleep(60)
@@ -63,18 +63,18 @@ async def report_loop() -> None:
 
 async def main() -> None:
     await init_db()
-    print(f"[MAIN] DB 초기화 완료. 타석: {BAY_IDS}")
+    print(f"[MAIN] DB 초기화 완료. 구역: {ZONE_IDS}")
 
-    for bay_id in BAY_IDS:
-        frame_queues[bay_id]  = asyncio.Queue(maxsize=1)
-        signal_queues[bay_id] = asyncio.Queue(maxsize=1)
+    for zone_id in ZONE_IDS:
+        frame_queues[zone_id]  = asyncio.Queue(maxsize=1)
+        signal_queues[zone_id] = asyncio.Queue(maxsize=1)
 
-    tasks = [bay_loop(b) for b in BAY_IDS] + [report_loop()]
+    tasks = [zone_loop(z) for z in ZONE_IDS] + [report_loop()]
 
-    # OpenCV 브릿지 — 카메라가 연결된 타석만 실행
-    for bay_id, cam_idx in BAY_CAMERAS.items():
+    # OpenCV 브릿지 — 카메라가 연결된 구역만 실행
+    for zone_id, cam_idx in ZONE_CAMERAS.items():
         tasks.append(
-            cv_run(bay_id, frame_queues[bay_id], signal_queues[bay_id], cam_idx)
+            cv_run(zone_id, frame_queues[zone_id], signal_queues[zone_id], cam_idx)
         )
 
     await asyncio.gather(*tasks)

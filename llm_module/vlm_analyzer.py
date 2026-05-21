@@ -41,7 +41,7 @@ _CONFIGS: dict[DetectionType, dict] = {
 
     DetectionType.SWEAT_WIPING: {
         "prompt": """
-You are a visual event detector for an unmanned indoor screen golf facility.
+You are a visual event detector for an unmanned retail store (e.g. unmanned cafe or convenience store).
 
 Look at the sequence of images.
 Determine whether a person is wiping sweat from their face, forehead, neck, or head.
@@ -72,11 +72,11 @@ Return JSON only.
 
     DetectionType.THEFT: {
         "prompt": """
-You are a security monitor for an unmanned indoor screen golf facility.
+You are a security monitor for an unmanned retail store (e.g. unmanned cafe or convenience store).
 
 Look at the sequence of images.
-Determine whether a person appears to be stealing or attempting to steal equipment,
-personal belongings, or facility property.
+Determine whether a person appears to be stealing or attempting to steal merchandise,
+equipment, personal belongings, or store property.
 
 Only answer true if there is visible evidence such as:
 - person picking up or carrying equipment toward an exit
@@ -84,7 +84,7 @@ Only answer true if there is visible evidence such as:
 - concealing objects inside clothing or bags
 - suspicious repeated approach to unattended items
 
-Do not answer true for normal use of golf equipment.
+Do not answer true for normal browsing or handling of store merchandise.
 Return JSON only.
 """,
         "schema": {
@@ -105,16 +105,16 @@ Return JSON only.
 
     DetectionType.PROPERTY_DAMAGE: {
         "prompt": """
-You are a security monitor for an unmanned indoor screen golf facility.
+You are a security monitor for an unmanned retail store (e.g. unmanned cafe or convenience store).
 
 Look at the sequence of images.
 Determine whether a person is damaging facility property such as:
-- striking screens, walls, or fixtures with a golf club
+- striking walls, displays, or fixtures with force
 - throwing objects at equipment
 - vandalism or forceful impact on any facility surface
 
 Only answer true if there is clear evidence of impact or deliberate damage.
-Do not answer true for normal golf swings toward the screen.
+Do not answer true for normal use of store facilities.
 Return JSON only.
 """,
         "schema": {
@@ -135,7 +135,7 @@ Return JSON only.
 
     DetectionType.FALL_EMERGENCY: {
         "prompt": """
-You are a safety monitor for an unmanned indoor screen golf facility.
+You are a safety monitor for an unmanned retail store (e.g. unmanned cafe or convenience store).
 
 Look at the sequence of images.
 Determine whether a person has fallen or is in a potential emergency situation:
@@ -143,7 +143,7 @@ Determine whether a person has fallen or is in a potential emergency situation:
 - person collapsed or slumped against a wall
 - sudden drop from standing position visible across frames
 
-Only answer true if the posture appears involuntary or distressed.
+Only answer true if the body position appears involuntary or distressed.
 Do not answer true if the person appears to be intentionally crouching or sitting.
 Return JSON only.
 """,
