@@ -1,13 +1,17 @@
 """
-오케스트레이터 에이전트 노드 (결정 전용).
-담당:
-  1. 크로스존 요청 — LLM으로 실행 타당성 판단 (실행은 actuator)
-  2. 충돌/불확실 고위험 — 알림 발송 의도 발행
-  3. 보고서 이상 패턴 — 관리자 푸시 의도 발행
+오케스트레이터 노드.
+두 단계로 동작한다:
+  - dispatch  : 그래프 진입 직후 trigger_type을 보고 전문 에이전트로 분배.
+                LLM 미사용, 상태 변경 없음.
+  - reconcile : 전문 에이전트 실행 후 LLM 기반 정책 결정.
+                1) 크로스존 요청 — LLM으로 실행 타당성 판단
+                2) 충돌/불확실 고위험 — 알림 발송 의도 발행
+                3) 보고서 이상 패턴 — 관리자 푸시 의도 발행
 부수효과는 직접 실행하지 않고 pending_actions로만 발행한다.
 """
 import asyncio
 import json
+import os
 from openai import OpenAI
 
 from llm_module.state import FacilityState
@@ -41,19 +45,30 @@ async def _judge_cross_zone(action: dict, zone_id: str) -> dict:
     )
     raw = await asyncio.to_thread(
         client.chat.completions.create,
-        model="gpt-4o",
+        model=os.getenv("ORCHESTRATOR_MODEL", "gpt-5-mini"),
         messages=[
             {"role": "system", "content": _CROSS_ZONE_SYSTEM},
             {"role": "user",   "content": user_content},
         ],
         response_format={"type": "json_object"},
-        max_tokens=150,
     )
     return json.loads(raw.choices[0].message.content)
 
 
-async def orchestrator_node(state: FacilityState) -> dict:
-    print(f"[AGENT: orchestrator] zone={state['zone_id']} conflict={state.get('conflict_detected')} cross_zone={bool(state.get('cross_zone_request'))}")
+_VALID_TRIGGERS = {"safety", "customer", "report"}
+
+
+async def orchestrator_dispatch_node(state: FacilityState) -> dict:
+    """진입 디스패처. trigger_type 검증만 수행, 분배는 graph의 conditional edge가 담당."""
+    trigger = state.get("trigger_type")
+    if trigger not in _VALID_TRIGGERS:
+        raise ValueError(f"orchestrator_dispatch: 알 수 없는 trigger_type={trigger!r}")
+    print(f"[AGENT: orchestrator_dispatch] zone={state.get('zone_id')} trigger={trigger}")
+    return {}
+
+
+async def orchestrator_reconcile_node(state: FacilityState) -> dict:
+    print(f"[AGENT: orchestrator_reconcile] zone={state['zone_id']} conflict={state.get('conflict_detected')} cross_zone={bool(state.get('cross_zone_request'))}")
     zone_id = state["zone_id"]
     decisions: list[str] = []
     actions: list[dict] = []

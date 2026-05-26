@@ -1,4 +1,5 @@
 import asyncio
+import os
 from datetime import datetime
 from openai import OpenAI
 from db.models import get_today_events, get_today_env_logs
@@ -35,12 +36,11 @@ async def generate_daily_report(zone_ids: list[str]) -> str:
 
     response = await asyncio.to_thread(
         client.chat.completions.create,
-        model="gpt-4o-mini",
+        model=os.getenv("REPORT_MODEL", "gpt-5-mini"),
         messages=[
             {"role": "system", "content": "당신은 무인 매장 운영 관리 AI입니다."},
             {"role": "user",   "content": prompt},
         ],
-        max_tokens=500,
     )
 
     report = response.choices[0].message.content.strip()

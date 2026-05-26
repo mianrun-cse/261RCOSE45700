@@ -36,6 +36,75 @@ async def test_customer_bot():
             print(f"액션: {result['action']}")
 
 
+async def test_customer_bot_mic():
+    """
+    마이크 인터랙티브 모드.
+    Enter를 누르면 N초간 녹음 → Whisper로 전사 → customer_bot에 전달 → TTS 응답 재생.
+    Ctrl+C로 종료.
+    """
+    print("\n" + "="*50)
+    print("[ 고객 응대 챗봇 — 마이크 입력 모드 ]")
+    print("="*50)
+    print("준비물: 마이크. (sounddevice/soundfile 미설치 시 pip install 필요)")
+
+    try:
+        from llm_module.stt import record_and_transcribe, play_audio
+    except ImportError as e:
+        print(f"[ERROR] STT 모듈 import 실패: {e}")
+        print("→ pip install sounddevice soundfile")
+        return
+
+    from llm_module.customer_bot import respond
+
+    zone_id = input("구역 ID (기본 '1번 구역'): ").strip() or "1번 구역"
+    try:
+        seconds = float(input("녹음 길이 초 (기본 5): ").strip() or "5")
+    except ValueError:
+        seconds = 5.0
+
+    context = {
+        "customer_name": "테스터",
+        "visit_count": 1,
+        "current_temp": 25.0,
+        "remaining_min": 30,
+        "reserved_min": 60,
+    }
+
+    print(f"\n[준비] zone={zone_id} · 녹음 {seconds:.0f}초. Ctrl+C로 종료.\n")
+
+    while True:
+        try:
+            input("→ Enter를 눌러 녹음 시작...")
+        except (EOFError, KeyboardInterrupt):
+            print("\n[종료]")
+            return
+
+        try:
+            text = await record_and_transcribe(seconds=seconds)
+        except KeyboardInterrupt:
+            print("\n[종료]")
+            return
+        except Exception as e:
+            print(f"[STT ERROR] {e}")
+            continue
+
+        if not text:
+            print("[STT] 인식 결과 없음 (다시 시도)")
+            continue
+
+        print(f"[STT] 인식: {text}")
+        result = await respond(text, zone_id, context, tts=True, all_zone_ids=["1번 구역","2번 구역","3번 구역"])
+
+        print(f"\n봇: {result.get('message','')}")
+        if result.get("action"):
+            print(f"액션: {result['action']}")
+        audio_path = result.get("audio_path")
+        if audio_path:
+            print(f"[TTS] 재생: {audio_path}")
+            play_audio(audio_path)
+        print()
+
+
 async def test_report_generator():
     print("\n" + "="*50)
     print("[ 일일 리포트 테스트 ]")
@@ -91,25 +160,25 @@ async def test_multi_agent():
 
     ZONE_IDS = ["1번 구역", "2번 구역", "3번 구역"]
 
-    # ── 시나리오 1: 단일 구역 요청 → customer → actuator ──────────────────────
-    print("\n[시나리오 1] 단일 구역 요청 (오케스트레이터 미개입 예상)")
-    print("  기대 경로: customer → actuator → END")
+    # ── 시나리오 1: 단일 구역 요청 ────────────────────────────────────────────
+    print("\n[시나리오 1] 단일 구역 요청 (reconcile no-op 예상)")
+    print("  기대 경로: orchestrator_dispatch → customer → orchestrator_reconcile → actuator → END")
     state = make_customer_state("1번 구역", ZONE_IDS, "온도 좀 낮춰줘", {"current_temp": 27.0}, tts_enabled=False)
     result = await facility_graph.ainvoke(state)
     print(f"  응답: {result.get('bot_response', {}).get('message', '')}")
     print(f"  오케스트레이터 결정: {result.get('orchestrator_decision', '(미실행)')}")
 
-    # ── 시나리오 2: 전체 구역 요청 → customer → orchestrator → actuator ───────
-    print("\n[시나리오 2] 전체 구역 요청 (오케스트레이터 개입 예상)")
-    print("  기대 경로: customer → orchestrator → actuator → END")
+    # ── 시나리오 2: 전체 구역 요청 ────────────────────────────────────────────
+    print("\n[시나리오 2] 전체 구역 요청 (reconcile LLM 판단 예상)")
+    print("  기대 경로: orchestrator_dispatch → customer → orchestrator_reconcile → actuator → END")
     state2 = make_customer_state("1번 구역", ZONE_IDS, "전체 구역 온도 22도로 맞춰줘", {"current_temp": 27.0}, tts_enabled=False)
     result2 = await facility_graph.ainvoke(state2)
     print(f"  응답: {result2.get('bot_response', {}).get('message', '')}")
     print(f"  오케스트레이터 결정: {result2.get('orchestrator_decision', '(미실행)')}")
 
-    # ── 시나리오 3: 고위험 불확실 안전 감지 → safety → orchestrator → actuator ─
-    print("\n[시나리오 3] 고위험 불확실 감지 (오케스트레이터 개입 예상)")
-    print("  기대 경로: safety → orchestrator → actuator → END")
+    # ── 시나리오 3: 고위험 불확실 안전 감지 ─────────────────────────────────────
+    print("\n[시나리오 3] 고위험 불확실 감지 (reconcile 알림 발송 예상)")
+    print("  기대 경로: orchestrator_dispatch → safety → orchestrator_reconcile → actuator → END")
     state3 = make_safety_state(
         zone_id="2번 구역",
         all_zone_ids=ZONE_IDS,
@@ -131,11 +200,12 @@ async def test_multi_agent():
 # ── 메뉴 ──────────────────────────────────────────────────────────────────────
 
 TESTS = {
-    "1": ("고객 응대 챗봇",         test_customer_bot),
-    "2": ("일일 리포트",             test_report_generator),
-    "3": ("관리자 알림",             test_alert_manager),
-    "4": ("멀티에이전트 시나리오",    test_multi_agent),
-    "5": ("전체 실행",               None),
+    "1": ("고객 응대 챗봇 (자동 텍스트)",        test_customer_bot),
+    "2": ("일일 리포트",                          test_report_generator),
+    "3": ("관리자 알림",                          test_alert_manager),
+    "4": ("멀티에이전트 시나리오",                test_multi_agent),
+    "5": ("전체 실행 (1~4, 마이크 모드 제외)",    None),
+    "6": ("고객 응대 챗봇 (마이크 입력, 인터랙티브)", test_customer_bot_mic),
 }
 
 async def main():
@@ -150,7 +220,8 @@ async def main():
 
     if choice == "5":
         for k, (name, fn) in TESTS.items():
-            if fn:
+            # 마이크 모드는 인터랙티브라 자동 실행 제외
+            if fn and k != "6":
                 await fn()
     elif choice in TESTS:
         _, fn = TESTS[choice]

@@ -2,7 +2,7 @@
 안전 감지 에이전트 노드 (결정 전용).
 vlm_analyzer의 분석 결과를 받아 알림/온도 제어 의도를 pending_actions로 발행하거나
 오케스트레이터 에스컬레이션을 결정한다. 부수효과는 직접 실행하지 않는다.
-- gpt-4o-mini 기본, confidence < 0.7 시 gpt-4o로 자율 에스컬레이션.
+- gpt-5-mini 기본, confidence < 0.7 시 gpt-5(flagship)로 자율 에스컬레이션.
 - 고위험 + confidence < 0.80 → conflict_detected=True → 오케스트레이터 판단 위임.
 """
 import asyncio
@@ -15,7 +15,7 @@ from llm_module.vlm_analyzer import (
     _CONFIGS, _build_input, encode_frame,
 )
 
-ESCALATION_MODEL = os.getenv("ESCALATION_MODEL", "gpt-4o")
+ESCALATION_MODEL = os.getenv("ESCALATION_MODEL", "gpt-5")
 CONFIDENCE_THRESHOLD = float(os.getenv("CONFIDENCE_THRESHOLD", "0.70"))
 ESCALATION_THRESHOLD = 0.70  # mini 결과가 이 미만이면 4o로 재판단
 
@@ -53,7 +53,6 @@ async def _reanalyze_with_better_model(
                 "schema": cfg["schema"],
             }
         },
-        max_output_tokens=200,
         store=False,
     )
 

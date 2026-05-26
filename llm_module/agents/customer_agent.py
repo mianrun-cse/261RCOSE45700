@@ -6,6 +6,7 @@
 """
 import asyncio
 import json
+import os
 from openai import OpenAI
 
 from llm_module.state import FacilityState
@@ -45,13 +46,12 @@ async def customer_node(state: FacilityState) -> dict:
 
     raw = await asyncio.to_thread(
         client.chat.completions.create,
-        model="gpt-4o-mini",
+        model=os.getenv("CUSTOMER_MODEL", "gpt-5-mini"),
         messages=[
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": user_content},
         ],
         response_format={"type": "json_object"},
-        max_tokens=200,
     )
 
     data = json.loads(raw.choices[0].message.content)

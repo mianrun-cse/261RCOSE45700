@@ -9,7 +9,7 @@ from openai import OpenAI
 
 client = OpenAI()
 
-VISION_MODEL = os.getenv("VISION_MODEL", "gpt-4o-mini")
+VISION_MODEL = os.getenv("VISION_MODEL", "gpt-5-mini")
 
 
 class DetectionType(Enum):
@@ -212,7 +212,6 @@ async def analyze(
                 "schema": cfg["schema"],
             }
         },
-        max_output_tokens=200,
         store=False,
     )
 
