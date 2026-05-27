@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<title>무인 매장 멀티에이전트 흐름</title>
+<style>
+  :root {
+    --bg: #1e1e2e;
+    --panel: #181825;
+    --card: #313244;
+    --border: #45475a;
+    --text: #cdd6f4;
+    --muted: #a6adc8;
+    --accent: #cba6f7;
+    --warn: #fab387;
+    --ok: #a6e3a1;
+    --err: #f38ba8;
+    --info: #89dceb;
+  }
+  * { box-sizing: border-box; }
+  body {
+    font-family: -apple-system, "Segoe UI", "Apple SD Gothic Neo", sans-serif;
+    background: var(--bg); color: var(--text);
+    margin: 0; padding: 24px; min-height: 100vh;
+  }
+  h1 { font-size: 1.4em; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); font-size: 0.85em; margin-bottom: 20px; }
+
+  .layout { display: grid; grid-template-columns: 1fr 440px; gap: 20px; }
+  .panel { background: var(--panel); border-radius: 12px; padding: 20px; }
+  .panel h2 {
+    font-size: 0.95em; margin: 0 0 12px; color: var(--warn);
+    text-transform: uppercase; letter-spacing: 0.5px;
+  }
+
+  /* ── 그래프 ─────────────────────────────────────────────────────────── */
+  .graph-row {
+    display: grid;
+    grid-template-columns: auto auto auto auto auto auto auto auto auto;
+    align-items: center; gap: 8px;
+  }
+  .branch { display: flex; flex-direction: column; gap: 10px; }
+  .node {
+    background: var(--card); border: 2px solid var(--border);
+    border-radius: 10px; padding: 14px 16px; text-align: center;
+    min-width: 130px; transition: all 0.35s ease;
+  }
+  .node .ttl { font-weight: 600; font-size: 0.92em; margin: 0; }
+  .node .sub { font-size: 0.7em; color: var(--muted); margin: 3px 0 0; }
+  .node.dim { opacity: 0.42; }
+  .node.passed {
+    border-color: var(--ok);
+    background: rgba(166, 227, 161, 0.08);
+  }
+  .node.active {
+    border-color: var(--accent);
+    background: var(--accent); color: var(--bg);
+    transform: scale(1.06);
+    box-shadow: 0 0 22px rgba(203, 166, 247, 0.6);
+    animation: pulse 1.4s ease-in-out infinite;
+  }
+  .node.active .sub { color: rgba(30, 30, 46, 0.7); }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 22px rgba(203, 166, 247, 0.6); }
+    50%      { box-shadow: 0 0 36px rgba(203, 166, 247, 0.9); }
+  }
+  .arrow { color: var(--warn); font-size: 1.3em; font-weight: bold; user-select: none; }
+  .terminal {
+    background: transparent; border: 2px dashed var(--border);
+    color: var(--muted); padding: 12px 14px;
+    border-radius: 999px; min-width: 70px; text-align: center;
+    font-size: 0.85em;
+  }
+  .terminal.active {
+    border-color: var(--ok); color: var(--ok);
+    box-shadow: 0 0 16px rgba(166, 227, 161, 0.5);
+  }
+
+  .legend { margin-top: 18px; display: flex; gap: 16px; flex-wrap: wrap; font-size: 0.78em; color: var(--muted); }
+  .legend span::before { content: "■"; margin-right: 4px; }
+  .legend .l-active::before { color: var(--accent); }
+  .legend .l-passed::before { color: var(--ok); }
+  .legend .l-dim::before    { color: var(--border); }
+
+  /* ── 우측 패널 ──────────────────────────────────────────────────────── */
+  .conn {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 0.7em; font-weight: 600;
+    background: var(--card); color: var(--muted); margin-left: 8px;
+  }
+  .conn.live { background: var(--ok); color: var(--bg); }
+
+  .scenarios { display: flex; flex-direction: column; gap: 8px; }
+  .scenarios button {
+    background: var(--card); color: var(--text);
+    border: 1px solid var(--border);
+    padding: 10px 12px; border-radius: 6px; cursor: pointer;
+    text-align: left; font-size: 0.85em; transition: background 0.15s;
+  }
+  .scenarios button:hover:not(:disabled) { background: var(--border); }
+  .scenarios button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  .now {
+    margin-top: 14px; padding: 10px 12px; border-radius: 6px;
+    background: #11111b; font-size: 0.82em;
+  }
+  .now .label { color: var(--muted); font-size: 0.78em; }
+  .now .name { font-weight: 600; }
+  .now .summary { color: var(--info); font-family: "Cascadia Code", Consolas, monospace;
+                  font-size: 0.78em; margin-top: 4px; word-break: break-all; }
+  .now .src { display: inline-block; font-size: 0.7em; padding: 1px 6px;
+              border-radius: 4px; margin-left: 6px; }
+  .src.web        { background: rgba(203,166,247,0.2); color: var(--accent); }
+  .src.test_agent { background: rgba(137,220,235,0.2); color: var(--info); }
+
+  .logs {
+    margin-top: 14px;
+    background: #11111b; border-radius: 6px;
+    padding: 10px; font-family: "Cascadia Code", Consolas, monospace;
+    font-size: 0.72em; line-height: 1.45;
+    height: 320px; overflow-y: auto;
+  }
+  .log-line { margin: 1px 0; word-break: break-all; white-space: pre-wrap; }
+  .log-line.node-evt    { color: var(--accent); font-weight: 600; }
+  .log-line.system      { color: var(--warn); }
+  .log-line.system.test { color: var(--info); }
+  .log-line.ok          { color: var(--ok); }
+  .log-line.err         { color: var(--err); }
+
+  .result {
+    margin-top: 12px; background: #11111b; border-radius: 6px;
+    padding: 10px; font-size: 0.78em;
+    max-height: 280px; overflow: auto;
+  }
+  .result h3 { margin: 0 0 6px; font-size: 0.85em; color: var(--warn); }
+  .result pre { margin: 0; white-space: pre-wrap; word-break: break-all; color: var(--text); }
+</style>
+</head>
+<body>
+
+<h1>무인 매장 멀티에이전트 흐름 <span class="conn" id="conn">연결 중...</span></h1>
+<div class="subtitle">웹 버튼 또는 test_agent.py --web-url 로 들어오는 모든 그래프 실행이 실시간 표시됩니다.</div>
+
+<div class="layout">
+  <div class="panel">
+    <h2>그래프 흐름</h2>
+    <div class="graph-row">
+      <div class="terminal" id="node-start">START</div>
+      <span class="arrow">→</span>
+
+      <div class="node dim" id="node-orchestrator_dispatch">
+        <p class="ttl">오케스트레이터</p>
+        <p class="sub">dispatch · 분배</p>
+      </div>
+      <span class="arrow">→</span>
+
+      <div class="branch">
+        <div class="node dim" id="node-safety">
+          <p class="ttl">안전 에이전트</p>
+          <p class="sub">safety_agent</p>
+        </div>
+        <div class="node dim" id="node-customer">
+          <p class="ttl">고객봇</p>
+          <p class="sub">customer_agent</p>
+        </div>
+        <div class="node dim" id="node-report">
+          <p class="ttl">보고서</p>
+          <p class="sub">report_agent</p>
+        </div>
+      </div>
+      <span class="arrow">→</span>
+
+      <div class="node dim" id="node-orchestrator_reconcile">
+        <p class="ttl">오케스트레이터</p>
+        <p class="sub">reconcile · 정책 결정</p>
+      </div>
+      <span class="arrow">→</span>
+
+      <div class="node dim" id="node-actuator">
+        <p class="ttl">실행</p>
+        <p class="sub">actuator · 부수효과</p>
+      </div>
+      <span class="arrow">→</span>
+
+      <div class="terminal" id="node-end">END</div>
+    </div>
+
+    <div class="legend">
+      <span class="l-active">활성 중</span>
+      <span class="l-passed">통과 완료</span>
+      <span class="l-dim">대기</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>시나리오 (수동 실행)</h2>
+    <div class="scenarios" id="scenarios"></div>
+
+    <div class="now" id="now">
+      <div class="label">현재</div>
+      <div class="name" id="now-name">대기 중</div>
+      <div class="summary" id="now-summary"></div>
+    </div>
+
+    <div class="result" id="input-box" style="display:none">
+      <h3>요청 (입력)</h3>
+      <pre id="input-content"></pre>
+    </div>
+
+    <h2 style="margin-top:18px">실시간 로그</h2>
+    <div class="logs" id="logs"></div>
+
+    <div class="result" id="result" style="display:none">
+      <h3>응답 (최종 상태)</h3>
+      <pre id="result-content"></pre>
+    </div>
+  </div>
+</div>
+
+<script>
+const NODE_IDS = [
+  "orchestrator_dispatch", "safety", "customer", "report",
+  "orchestrator_reconcile", "actuator"
+];
+
+const $ = id => document.getElementById(id);
+const buttonsEl = $("scenarios");
+const logsEl    = $("logs");
+const resultEl  = $("result");
+const resultContentEl = $("result-content");
+const inputBoxEl = $("input-box");
+const inputContentEl = $("input-content");
+const connEl    = $("conn");
+const nowNameEl = $("now-name");
+const nowSummaryEl = $("now-summary");
+
+function resetGraph() {
+  NODE_IDS.forEach(id => {
+    const el = $("node-" + id);
+    el.classList.remove("active", "passed");
+    el.classList.add("dim");
+  });
+  $("node-start").classList.remove("active");
+  $("node-end").classList.remove("active");
+  resultEl.style.display = "none";
+  inputBoxEl.style.display = "none";
+}
+
+function inputOneLiner(input) {
+  if (!input) return "";
+  const t = input.trigger_type;
+  if (t === "customer") {
+    return `[customer] zone=${input.zone_id ?? "?"}  msg="${input.user_message ?? ""}"`;
+  }
+  if (t === "safety") {
+    const ar = input.analysis_result || {};
+    return `[safety] zone=${input.zone_id ?? "?"}  det=${ar.detection_type}  conf=${ar.confidence}  sev=${ar.severity}`;
+  }
+  if (t === "report") {
+    return `[report] zones=${(input.all_zone_ids || []).join(", ")}`;
+  }
+  return JSON.stringify(input);
+}
+
+function log(text, cls="") {
+  const div = document.createElement("div");
+  div.className = "log-line " + cls;
+  div.textContent = text;
+  logsEl.appendChild(div);
+  // 로그 너무 길어지면 앞부분 정리
+  if (logsEl.childElementCount > 500) {
+    logsEl.removeChild(logsEl.firstChild);
+  }
+  logsEl.scrollTop = logsEl.scrollHeight;
+}
+
+function activate(nodeId) {
+  NODE_IDS.forEach(id => {
+    const el = $("node-" + id);
+    if (el.classList.contains("active")) {
+      el.classList.remove("active");
+      el.classList.add("passed");
+    }
+  });
+  const el = $("node-" + nodeId);
+  if (!el) return;
+  el.classList.remove("dim");
+  el.classList.add("active");
+}
+
+function srcBadge(source) {
+  return source === "test_agent"
+    ? '<span class="src test_agent">test_agent</span>'
+    : '<span class="src web">web</span>';
+}
+
+async function loadScenarios() {
+  const res = await fetch("/scenarios");
+  const data = await res.json();
+  data.forEach(s => {
+    const b = document.createElement("button");
+    b.textContent = s.name;
+    b.dataset.key = s.key;
+    b.onclick = () => triggerScenario(s.key);
+    buttonsEl.appendChild(b);
+  });
+}
+
+async function triggerScenario(key) {
+  await fetch("/trigger/" + key, { method: "POST" });
+  // 결과 표시는 /stream 이벤트로 들어오는 broadcast가 처리
+}
+
+// ── /stream 자동 구독 ───────────────────────────────────────────────────
+function connect() {
+  const es = new EventSource("/stream");
+
+  es.addEventListener("hello", () => {
+    connEl.textContent = "LIVE";
+    connEl.classList.add("live");
+  });
+
+  es.addEventListener("start", e => {
+    const d = JSON.parse(e.data);
+    resetGraph();
+    $("node-start").classList.add("active");
+    nowNameEl.innerHTML = d.name + " " + srcBadge(d.source);
+    nowSummaryEl.textContent = inputOneLiner(d.input);
+
+    if (d.input) {
+      inputBoxEl.style.display = "block";
+      inputContentEl.textContent = JSON.stringify(d.input, null, 2);
+    }
+
+    const cls = d.source === "test_agent" ? "system test" : "system";
+    log("▶ [" + d.source + "] " + d.name, cls);
+    if (d.input) log("  요청: " + inputOneLiner(d.input), cls);
+  });
+
+  es.addEventListener("log", e => {
+    const d = JSON.parse(e.data);
+    log(d.line, d.node ? "node-evt" : "");
+    if (d.node) {
+      $("node-start").classList.remove("active");
+      $("node-start").classList.add("passed");
+      activate(d.node);
+    }
+  });
+
+  es.addEventListener("done", e => {
+    const d = JSON.parse(e.data);
+    NODE_IDS.forEach(id => {
+      const el = $("node-" + id);
+      if (el.classList.contains("active")) {
+        el.classList.remove("active");
+        el.classList.add("passed");
+      }
+    });
+    $("node-end").classList.add("active");
+
+    // test_agent 결과면 PASS/FAIL 표시
+    if (d.source === "test_agent") {
+      if (d.passed) {
+        log("✓ PASS · " + d.name, "ok");
+      } else {
+        log("✗ FAIL · " + d.name + " — " + (d.failures || []).join("; "), "err");
+      }
+    } else {
+      log("✓ 완료 · " + d.name, "ok");
+    }
+
+    if (d.state && Object.keys(d.state).length > 0) {
+      resultEl.style.display = "block";
+      resultContentEl.textContent = JSON.stringify(d.state, null, 2);
+    }
+  });
+
+  es.addEventListener("error", e => {
+    let msg = "(에러)";
+    try { msg = JSON.parse(e.data).message || msg; } catch (_) {}
+    log("✗ 에러: " + msg, "err");
+  });
+
+  es.onerror = () => {
+    connEl.textContent = "재연결 중...";
+    connEl.classList.remove("live");
+    es.close();
+    setTimeout(connect, 1500);
+  };
+}
+
+loadScenarios();
+connect();
+</script>
+</body>
+</html>
