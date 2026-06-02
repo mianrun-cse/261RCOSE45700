@@ -53,6 +53,7 @@ async def _reanalyze_with_better_model(
                 "schema": cfg["schema"],
             }
         },
+        service_tier=cfg["service_tier"],
         store=False,
     )
 

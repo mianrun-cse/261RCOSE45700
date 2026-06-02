@@ -35,3 +35,4 @@ env/
 *.log
 .DS_Store
 *.pdf
+CLAUDE.md

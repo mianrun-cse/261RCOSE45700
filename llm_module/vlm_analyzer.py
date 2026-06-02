@@ -68,6 +68,7 @@ Return JSON only.
         },
         "schema_name": "sweat_wiping_detection",
         "severity": Severity.LOW,
+        "service_tier": "default",
     },
 
     DetectionType.THEFT: {
@@ -101,6 +102,7 @@ Return JSON only.
         },
         "schema_name": "theft_detection",
         "severity": Severity.HIGH,
+        "service_tier": "priority",
     },
 
     DetectionType.PROPERTY_DAMAGE: {
@@ -131,6 +133,7 @@ Return JSON only.
         },
         "schema_name": "property_damage_detection",
         "severity": Severity.HIGH,
+        "service_tier": "priority",
     },
 
     DetectionType.FALL_EMERGENCY: {
@@ -161,6 +164,7 @@ Return JSON only.
         },
         "schema_name": "fall_emergency_detection",
         "severity": Severity.HIGH,
+        "service_tier": "priority",
     },
 }
 
@@ -212,6 +216,7 @@ async def analyze(
                 "schema": cfg["schema"],
             }
         },
+        service_tier=cfg["service_tier"],
         store=False,
     )
 
