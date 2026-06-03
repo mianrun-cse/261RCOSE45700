@@ -35,15 +35,15 @@ async def generate_daily_report(zone_ids: list[str]) -> str:
 """
 
     response = await asyncio.to_thread(
-        client.chat.completions.create,
+        client.responses.create,
         model=os.getenv("REPORT_MODEL", "gpt-5-mini"),
-        messages=[
-            {"role": "system", "content": "당신은 무인 매장 운영 관리 AI입니다."},
-            {"role": "user",   "content": prompt},
-        ],
+        instructions="당신은 무인 매장 운영 관리 AI입니다.",
+        input=prompt,
+        service_tier="flex",
+        store=False,
     )
 
-    report = response.choices[0].message.content.strip()
+    report = response.output_text.strip()
     print(f"[REPORT]\n{report}")
     return report
 

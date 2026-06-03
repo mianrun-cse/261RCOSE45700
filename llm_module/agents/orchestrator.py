@@ -41,18 +41,19 @@ async def _judge_cross_zone(action: dict, zone_id: str) -> dict:
     """크로스존 요청의 타당성을 LLM으로 판단."""
     user_content = (
         f"요청 구역: {zone_id}\n"
-        f"요청 내용: {json.dumps(action, ensure_ascii=False)}"
+        f"요청 내용: {json.dumps(action, ensure_ascii=False)}\n"
+        "JSON으로만 응답하세요."
     )
     raw = await asyncio.to_thread(
-        client.chat.completions.create,
+        client.responses.create,
         model=os.getenv("ORCHESTRATOR_MODEL", "gpt-5-mini"),
-        messages=[
-            {"role": "system", "content": _CROSS_ZONE_SYSTEM},
-            {"role": "user",   "content": user_content},
-        ],
-        response_format={"type": "json_object"},
+        instructions=_CROSS_ZONE_SYSTEM,
+        input=user_content,
+        text={"format": {"type": "json_object"}},
+        service_tier="default",
+        store=False,
     )
-    return json.loads(raw.choices[0].message.content)
+    return json.loads(raw.output_text)
 
 
 _VALID_TRIGGERS = {"safety", "customer", "report"}

@@ -19,6 +19,8 @@ audio_cache/
 
 # 얼굴 이미지 저장소
 saved_faces/
+
+# 위험 감지 스크린샷
 danger_screenshots/
 
 # Python
@@ -36,3 +38,4 @@ env/
 *.log
 .DS_Store
 *.pdf
+CLAUDE.md

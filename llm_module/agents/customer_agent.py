@@ -42,19 +42,19 @@ async def customer_node(state: FacilityState) -> dict:
     context = state.get("customer_context") or {}
 
     context_str = json.dumps(context, ensure_ascii=False)
-    user_content = f"[현재 상황]\n{context_str}\n\n[고객 요청]\n{user_message}"
+    user_content = f"[현재 상황]\n{context_str}\n\n[고객 요청]\n{user_message}\n반드시 JSON으로만 응답하세요."
 
     raw = await asyncio.to_thread(
-        client.chat.completions.create,
+        client.responses.create,
         model=os.getenv("CUSTOMER_MODEL", "gpt-5-mini"),
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": user_content},
-        ],
-        response_format={"type": "json_object"},
+        instructions=SYSTEM_PROMPT,
+        input=user_content,
+        text={"format": {"type": "json_object"}},
+        service_tier="priority",
+        store=False,
     )
 
-    data = json.loads(raw.choices[0].message.content)
+    data = json.loads(raw.output_text)
     message = data.get("message", "")
     action = data.get("action")
 
