@@ -19,6 +19,7 @@ audio_cache/
 
 # 얼굴 이미지 저장소
 saved_faces/
+danger_screenshots/
 
 # Python
 __pycache__/

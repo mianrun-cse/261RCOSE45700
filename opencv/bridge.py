@@ -189,27 +189,29 @@ def save_danger_screenshots(frames, face_detector) -> list[str]:
 
 def analyze_danger_with_ai_api(image_paths: list[str], result_callback):
     """모자이크 처리된 이미지를 GPT-4o로 분석. 백그라운드 스레드에서 실행."""
-    try:
-        client  = OpenAI()
-        content = []
-        for path in image_paths:
-            img = cv2.imread(path)
-            if img is None:
-                continue
-            _, buf  = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 85])
-            img_b64 = base64.b64encode(buf).decode('utf-8')
-            content.append({
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
-            })
-            try:
-                os.remove(path)
-            except OSError:
-                pass
+    # 파일 읽기 + 즉시 삭제 (API 성공/실패와 무관하게 삭제 보장)
+    content = []
+    for path in image_paths:
+        img = cv2.imread(path)
+        try:
+            os.remove(path)
+        except OSError:
+            pass
+        if img is None:
+            continue
+        _, buf  = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        img_b64 = base64.b64encode(buf).decode('utf-8')
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{img_b64}"},
+        })
 
-        if not content:
-            result_callback("Failed to load images.")
-            return
+    if not content:
+        result_callback("Failed to load images.")
+        return
+
+    try:
+        client = OpenAI()
 
         content.append({
             "type": "text",
