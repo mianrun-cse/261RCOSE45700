@@ -26,6 +26,7 @@ class TriggerSignals:
     theft:            bool = False   # 손이 상품/보관 구역 근접
     property_damage:  bool = False   # 빠른 충격성 움직임 감지
     fall_emergency:   bool = False   # 수평 자세 + 정지
+    body_sway:        bool = False   # 어깨 중심점 과도한 흔들림 (BodySwayDetector)
     person_count:     int  = 0       # 구역 내 인원 수
     activity_count:   int  = 0       # 누적 활동 횟수
     temperature:      float = 0.0   # 현재 온도 (센서)
@@ -63,7 +64,7 @@ class ZoneStateMachine:
             DetectionType.SWEAT_WIPING:    signals.sweat_wiping,
             DetectionType.THEFT:           signals.theft,
             DetectionType.PROPERTY_DAMAGE: signals.property_damage,
-            DetectionType.FALL_EMERGENCY:  signals.fall_emergency,
+            DetectionType.FALL_EMERGENCY:  signals.fall_emergency or signals.body_sway,
         }
 
         # 센서 선제 판단: 온도/습도 임계값 초과 시 sweat_wiping 강제 활성화
