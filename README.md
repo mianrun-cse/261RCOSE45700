@@ -1,7 +1,8 @@
 # 무인 매장 AI 관리 시스템
 
 LangGraph 기반 멀티에이전트 아키텍처로 구현된 무인 매장(무인 카페·편의점 등) 통합 관리 시스템.
-영상 안전 감지, 고객 응대, 일일 보고서를 역할별 전문 에이전트가 처리하며, 오케스트레이터가 에이전트 간 협력을 조율한다.
+영상 안전·위험행동 감지, 고객 응대, 일일 보고서를 역할별 전문 에이전트가 처리하며, 오케스트레이터가 에이전트 간 협력을 조율한다.
+카메라단(MediaPipe + OpenCV)은 땀 닦기·몸 흔들림 등 이상 신호를 감지하고, 외부 분석에 보내기 전 **얼굴을 모자이크 처리**해 개인정보를 보호한다.
 모든 에이전트는 **부수효과 없는 "결정 노드"**이며, 실제 실행(알림·환경 제어·TTS)은 그래프 말단의 `actuator` 노드가 전담한다.
 
 ---
@@ -78,19 +79,19 @@ actuator               → [END] : 부수효과 실행 후 종료
 ## 프로젝트 구조
 
 ```
-무인골프/
-├── main.py                        # 진입점 — 구역 루프 + 보고서 루프
+실전SW/
+├── main.py                        # 진입점 — 구역 카메라 브리지 + 상태머신 루프 + 보고서 루프
 ├── test_modules.py                # 모듈별 수동 테스트 (메뉴 [1]~[6])
 ├── test_agent.py                  # 랜덤 시나리오 자동 검증 에이전트
 ├── requirements.txt
 ├── .env.example                   # 환경변수 템플릿
 │
-├── llm_module/
-│   ├── graph.py                   # LangGraph StateGraph 정의
+├── llm_module/                    # LangGraph 멀티에이전트 코어
+│   ├── graph.py                   # LangGraph StateGraph 정의 (싱글톤 facility_graph)
 │   ├── state.py                   # FacilityState 스키마 + 팩토리 함수
-│   ├── state_machine.py           # VLM 빈도 제어 / cooldown (구역별)
+│   ├── state_machine.py           # VLM 빈도 제어 / cooldown / TriggerSignals (구역별)
 │   ├── customer_bot.py            # 고객봇 public API (graph 경유)
-│   ├── vlm_analyzer.py            # OpenAI Vision API 래퍼
+│   ├── vlm_analyzer.py            # OpenAI Vision API 래퍼 (DetectionType 4종)
 │   ├── report_generator.py        # 일일 리포트 생성
 │   ├── tts.py                     # 공용 TTS 유틸리티 (출력)
 │   ├── stt.py                     # 마이크 녹음 + Whisper 전사 (입력)
@@ -103,16 +104,82 @@ actuator               → [END] : 부수효과 실행 후 종료
 │       ├── report_agent.py        # 보고서 에이전트 (결정)
 │       └── actuator.py            # 실행 노드 (부수효과 전담)
 │
+├── opencv/                        # 영상 감지 파이프라인 (MediaPipe + OpenCV)
+│   ├── bridge.py                  # 카메라 → 위험감지 → TriggerSignals/프레임 큐 (asyncio 어댑터)
+│   ├── face_detection.py          # 독립 실행형 얼굴/손/자세 감지 데모
+│   ├── hand_landmarker.task       # MediaPipe 손 랜드마크 모델
+│   ├── blaze_face_short_range.tflite  # MediaPipe 얼굴 감지 모델 (모자이크용)
+│   └── pose_landmarker_lite.task  # MediaPipe 자세 모델 (몸 흔들림 감지, 없으면 비활성)
+│
 ├── web/                           # 실시간 흐름 시각화 (FastAPI + SSE)
 │   ├── app.py                     # broadcast 채널 / /trigger / /events / /stream
 │   └── static/index.html          # 단일 페이지 (입력/그래프/응답 실시간 표시)
 │
 ├── db/
-│   └── models.py                  # SQLite 스키마 + 쿼리
-└── opencv/
-    ├── bridge.py                  # OpenCV ↔ asyncio 어댑터
-    └── face_detection.py          # MediaPipe 감지
+│   └── models.py                  # SQLite 스키마 + 쿼리 (customers / visits / events / env_logs)
+│
+└── (Arduino 액추에이터 & 레이턴시 데모 — 본체와 독립)
+    ├── arduino_actuator.py        # USB 시리얼 래퍼 (ALERT/NORMAL, 보드 없으면 mock)
+    ├── camera_bridge_demo.py      # Tapo RTSP → OpenCV → mock 이벤트 → 상태머신
+    ├── camera_arduino_demo.py     # 위 데모 + Arduino 액추에이터 연동
+    ├── mock_latency_demo.py       # mock 감지 → OpenAI 판단 → Arduino 엔드투엔드 레이턴시 측정
+    ├── latency_profiler.py        # 파이프라인 구간별 타이밍 수집 (CSV/JSON)
+    └── test_arduino.py            # 최소 시리얼 연결 테스트
 ```
+
+> `opencv/bridge.py`가 `main.py`에 연결되는 운영 경로이고, 루트의 `camera_*_demo.py` / `*_latency_*.py`는 카메라·Arduino·레이턴시를 독립적으로 검증하는 데모 스크립트다.
+
+---
+
+## 영상 위험 감지 파이프라인 (`opencv/bridge.py`)
+
+카메라 한 대당 별도 스레드에서 동기 OpenCV 루프가 돌며, MediaPipe로 손/얼굴/자세를 추적해 두 종류의 신호를 만든다. 결과는 `TriggerSignals`로 `ZoneStateMachine`에 전달되고, 이상 시 얼굴을 모자이크한 4프레임 배치가 VLM 파이프라인으로 넘어간다.
+
+| 감지 | 방식 | 출력 신호 |
+|------|------|----------|
+| 땀 닦기 / 가림 (occlusion) | 얼굴이 감지된 상태에서 손 랜드마크가 얼굴 근처에 `OCCLUSION_TRIGGER_FRAMES`회 이상 머무름 | `sweat_wiping=True` |
+| 몸 흔들림 (위험 행동) | `BodySwayDetector`가 어깨 중심점 이동 범위를 추적, 임계 초과가 연속되면 트리거 | `body_sway=True` → 상태머신에서 `FALL_EMERGENCY`로 매핑 |
+
+**몸 흔들림 → 위험 분석 경로 (개인정보 보호 내장):**
+
+```
+어깨 흔들림 연속 감지 → 10프레임 캡처 → 얼굴 모자이크 처리 → JPEG 임시 저장
+   → 백그라운드 스레드에서 GPT-4o(Vision)로 "위험 상황 여부" 분석 → 콘솔 출력
+   → 분석에 사용한 임시 파일은 호출 직후 즉시 삭제
+```
+
+- 캡처/저장 직전 `apply_face_mosaic()`로 모든 얼굴을 픽셀화 → 외부 API에는 얼굴 식별 불가 이미지만 전송
+- `OPENAI_API_COOLDOWN_SEC`(기본 30초) cooldown으로 중복 분석 방지
+- `pose_landmarker_lite.task`가 없으면 몸 흔들림 감지만 자동 비활성, 나머지 파이프라인은 그대로 동작
+- `DEBUG_CAMERA=1`이면 감지 오버레이 창 표시, `TRACE_CAMERA_DATA=1`이면 `[DATA][BRIDGE->STATE]` 트레이스 로그 출력
+
+---
+
+## Arduino 액추에이터 & 레이턴시 측정 (데모)
+
+물리 액추에이터(경광등/팬 등)를 Arduino USB 시리얼로 제어하고, "감지 → 판단 → 작동"까지의 엔드투엔드 지연을 측정하는 독립 데모 묶음. **본체(`main.py`)와 분리되어 있고, 보드가 없으면 자동으로 mock 모드로 동작**한다.
+
+```bash
+# Tapo RTSP 카메라만 띄우기 (e=mock 이벤트, s=스크린샷, q=종료)
+python camera_bridge_demo.py
+
+# 카메라 + Arduino 연동 (e=ALERT 트리거, r=NORMAL 복귀)
+python camera_arduino_demo.py
+
+# 감지→판단→액추에이터 레이턴시 벤치마크 → latency_results.csv / .json 저장
+python mock_latency_demo.py --events 5            # OpenAI 판단 포함
+python mock_latency_demo.py --events 5 --agent-mock   # 로컬 규칙 판단(오프라인)
+python mock_latency_demo.py --arduino-mock        # 보드 없이 mock 액추에이터
+
+# 보드 직결 최소 확인
+python test_arduino.py
+```
+
+- `arduino_actuator.py` — `ArduinoActuator`는 `pyserial` 미설치/연결 실패 시 자동 mock 전환. `ALERT`/`NORMAL` 명령에 대한 왕복 시간(`round_trip_ms`)을 함께 반환
+- `latency_profiler.py` — `detection_created → ... → actuator_response_received` 7개 체크포인트를 수집해 구간별 ms와 합계를 CSV/JSON으로 저장하고 요약 표를 출력
+- Arduino는 `.env`의 `ARDUINO_ENABLED=1`, `ARDUINO_PORT`, `ARDUINO_BAUD`로 제어
+
+> 데모의 OpenAI 판단(`mock_latency_demo.py`)과 위험 분석(`opencv/bridge.py`)은 멀티에이전트 본체와 달리 `chat.completions` + `gpt-4o`를 직접 사용한다. Responses API 통일 규칙은 `llm_module`의 그래프/에이전트에만 적용된다.
 
 ---
 
@@ -122,6 +189,8 @@ actuator               → [END] : 부수효과 실행 후 종료
 
 - Python 3.11+
 - OpenAI API 키
+- (선택) USB 웹캠 또는 Tapo TC70 등 RTSP IP 카메라 + MediaPipe 모델 파일(`opencv/`)
+- (선택) Arduino 보드 + `pyserial` (액추에이터 데모)
 - (선택) Solapi SMS 키, 환경 제어 API
 
 ### 설치
@@ -138,7 +207,7 @@ pip install -r requirements.txt
 OPENAI_API_KEY=sk-...
 ```
 
-주요 환경변수:
+주요 환경변수 (전체 목록과 설명은 [.env.example](.env.example) 참고):
 
 | 변수 | 설명 | 기본값 |
 |-----|------|--------|
@@ -148,12 +217,23 @@ OPENAI_API_KEY=sk-...
 | `REPORT_MODEL` | 일일 보고서 모델 | `gpt-5-mini` |
 | `ESCALATION_MODEL` | 안전 감지 에스컬레이션 모델 | `gpt-5` |
 | `ORCHESTRATOR_MODEL` | 오케스트레이터 reconcile 모델 | `gpt-5-mini` |
-| `TTS_MODEL` | TTS 모델 | `tts-1` |
-| `TTS_VOICE` | TTS 음성 | `nova` |
-| `STT_MODEL` | STT(마이크 입력) 모델 | `whisper-1` |
-| `STT_LANGUAGE` | STT 언어 코드 | `ko` |
-| `DB_PATH` | SQLite 파일 경로 | `golf.db` |
-| `CLOSE_HOUR` | 보고서 생성 시각 (24h) | `22` |
+| `TTS_MODEL` / `TTS_VOICE` | TTS 모델 / 음성 | `tts-1` / `nova` |
+| `STT_MODEL` / `STT_LANGUAGE` | STT 모델 / 언어 코드 | `whisper-1` / `ko` |
+| `DB_PATH` | SQLite 파일 경로 | `store.db` |
+| `OPEN_HOUR` / `CLOSE_HOUR` | 영업 시작 / 보고서 생성 시각 (24h) | `9` / `22` |
+| **카메라** | | |
+| `TAPO_RTSP_URL` | 설정 시 1번 구역에 RTSP IP 카메라 사용 | (없음) |
+| `ZONE1_CAMERA_INDEX` | 1번 구역 USB 웹캠 인덱스 (RTSP 미설정 시) | `0` |
+| `ZONE2_CAMERA_INDEX` / `ZONE3_CAMERA_INDEX` | 값이 있을 때만 해당 구역 카메라 활성화 | (없음) |
+| `DEBUG_CAMERA` | 감지 오버레이 창 표시 (1/0) | `1` |
+| `TRACE_CAMERA_DATA` | 데이터 흐름 트레이스 로그 (1/0) | `1` |
+| **Arduino (데모)** | | |
+| `ARDUINO_ENABLED` | Arduino 액추에이터 사용 (1/0, `pyserial` 필요) | `0` |
+| `ARDUINO_PORT` / `ARDUINO_BAUD` | 시리얼 포트 / 보레이트 | `COM3` / `9600` |
+| **외부 연동** | | |
+| `ENV_CONTROL_API_URL` / `_KEY` | 환경 제어(온도/조명/팬) API | (없음) |
+| `SMS_API_KEY` / `SENDER_PHONE` / `MANAGER_PHONE` | Solapi SMS 발송 | (없음) |
+| `PUSH_WEBHOOK` | 앱 푸시 웹훅 URL | (없음) |
 
 ### 실행
 
@@ -243,3 +323,5 @@ python test_agent.py --seed --verbose # 실패 시 캡처 stdout 출력
 - **기존 async 구조 유지** — LangGraph `ainvoke()`가 asyncio 루프에 자연스럽게 통합
 - **Responses API 통일** — 전체 LLM 호출을 `client.responses.create`로 통일. 응답 파싱이 모두 `raw.output_text`로 단순화되고, `service_tier`로 호출 우선순위를 명시적으로 제어
 - **이벤트 브로커 패턴 (웹 시각화)** — `web/app.py`가 단일 broadcast 채널을 두고 페이지 버튼·외부 테스트 에이전트의 그래프 실행 이벤트를 모두 같은 SSE 채널로 fan-out
+- **개인정보 보호 내장** — 카메라단이 위험 프레임을 외부 VLM/저장소로 보내기 전 `apply_face_mosaic()`로 얼굴을 픽셀화하고, 분석용 임시 파일은 호출 직후 즉시 삭제
+- **점진적 성능 저하(graceful degradation)** — MediaPipe 모델·카메라·Arduino 보드가 없어도 폴백(Haar Cascade / 감지 비활성 / mock 모드)으로 나머지 파이프라인은 그대로 동작
