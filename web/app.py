@@ -36,8 +36,9 @@ from pydantic import BaseModel
 
 from db.models import init_db
 from llm_module.state import (
-    make_customer_state, make_safety_state, make_report_state,
+    make_customer_state, make_safety_state, make_report_state, make_insight_state,
 )
+from data_simulation import SAMPLE_PROFILES
 from test_agent import install_actuator_mocks
 
 ZONE_IDS = ["1번 구역", "2번 구역", "3번 구역"]
@@ -174,12 +175,17 @@ def _report():
     return make_report_state(zone_id="1번 구역", all_zone_ids=ZONE_IDS)
 
 
+def _insight():
+    return make_insight_state(district_profile=SAMPLE_PROFILES["서울-강남구"])
+
+
 SCENARIOS = {
     "customer_single":  ("고객 - 단일 구역 온도 요청",              _customer_single),
     "customer_cross":   ("고객 - 전체 구역 요청 (크로스존)",         _customer_cross),
     "safety_conflict":  ("안전 - 고위험 불확실 (충돌 라우팅)",       _safety_conflict),
     "safety_normal":    ("안전 - 명확한 도난 감지",                  _safety_normal),
     "report":           ("일일 보고서 생성",                          _report),
+    "insight":          ("인사이트 - 상권 분석 (서울-강남구)",        _insight),
 }
 
 _NODE_LOG = re.compile(r"\[AGENT:\s*(\w+)\]")
@@ -188,6 +194,47 @@ _NODE_LOG = re.compile(r"\[AGENT:\s*(\w+)\]")
 @app.get("/scenarios")
 async def list_scenarios():
     return [{"key": k, "name": name} for k, (name, _) in SCENARIOS.items()]
+
+
+# ── 인사이트 엔진 API (운영자 대시보드 백엔드) ───────────────────────────────
+
+class InsightRequest(BaseModel):
+    """상권 인구통계 프로필(DistrictProfile). 미지정 필드는 LLM이 추론한다.
+
+    district만으로 호출하면 SAMPLE_PROFILES에서 사전 집계 프로필을 사용한다
+    (예: {"district": "서울-강남구"}). 전체 프로필을 직접 넘기면 그 값을 사용한다.
+    """
+    district: str | None = None
+    profile: dict | None = None
+
+
+@app.post("/insight")
+async def insight(req: InsightRequest):
+    """상권 프로필 → AI 인사이트 + 상품 추천 (동기 응답).
+
+    그래프(insight → recommendation)를 한 번 실행하고 최종 결과만 반환한다.
+    (실시간 흐름 시각화가 필요하면 페이지의 '인사이트' 버튼 = POST /trigger/insight 사용)
+    """
+    profile = req.profile
+    if profile is None:
+        if req.district and req.district in SAMPLE_PROFILES:
+            profile = SAMPLE_PROFILES[req.district]
+        else:
+            raise HTTPException(
+                400,
+                "profile 또는 SAMPLE_PROFILES에 존재하는 district가 필요합니다. "
+                f"사용 가능 district: {list(SAMPLE_PROFILES)}",
+            )
+
+    from llm_module.graph import facility_graph
+
+    state = make_insight_state(district_profile=profile)
+    result = await facility_graph.ainvoke(state)
+    return {
+        "district": profile.get("district"),
+        "insight": result.get("insight_result"),
+        "recommendations": result.get("recommendations"),
+    }
 
 
 @app.post("/trigger/{key}")
@@ -225,6 +272,11 @@ def _input_from_state(state: dict) -> dict:
             "trigger_type": "report",
             "zone_id": state.get("zone_id"),
             "all_zone_ids": state.get("all_zone_ids") or [],
+        }
+    if trigger == "insight":
+        return {
+            "trigger_type": "insight",
+            "district_profile": state.get("district_profile") or {},
         }
     return {"trigger_type": trigger}
 
@@ -302,6 +354,7 @@ def _serialize_state(s: dict) -> dict:
         "bot_response", "orchestrator_decision",
         "cross_zone_request", "conflict_detected", "anomaly_detected",
         "report_text", "pending_actions",
+        "district_profile", "insight_result", "recommendations",
     )
     out: dict = {}
     for k in keep:

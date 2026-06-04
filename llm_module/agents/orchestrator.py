@@ -56,7 +56,7 @@ async def _judge_cross_zone(action: dict, zone_id: str) -> dict:
     return json.loads(raw.output_text)
 
 
-_VALID_TRIGGERS = {"safety", "customer", "report"}
+_VALID_TRIGGERS = {"safety", "customer", "report", "insight"}
 
 
 async def orchestrator_dispatch_node(state: FacilityState) -> dict:
