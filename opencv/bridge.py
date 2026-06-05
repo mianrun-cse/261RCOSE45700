@@ -44,6 +44,12 @@ SWAY_CAPTURE_INTERVAL   = 3
 OPENAI_API_COOLDOWN_SEC = 30
 _POSE_LEFT_SHOULDER     = 11
 _POSE_RIGHT_SHOULDER    = 12
+_HAND_WRIST             = 0
+
+# 손 흔들림 감지
+HAND_SHAKE_WINDOW_FRAMES  = 8
+HAND_SHAKE_THRESHOLD      = 40   # px — 손 중심이 이 이상 흔들리면 감지
+HAND_SHAKE_TRIGGER_FRAMES = 3
 
 os.makedirs(DANGER_SCREENSHOT_DIR, exist_ok=True)
 
@@ -58,14 +64,18 @@ class BodySwayDetector:
     """어깨 중심점을 추적해 과도한 몸 흔들림을 감지한다."""
 
     def __init__(self):
-        self.position_history: list[tuple] = []
+        self.left_shoulder_history: list[tuple]  = []
+        self.right_shoulder_history: list[tuple] = []
         self.sway_consecutive   = 0
         self.capturing          = False
         self.capture_frames: list = []
         self.capture_countdown  = 0
         self.last_api_call_time = 0.0
+        self.hand_position_history: list[tuple] = []
+        self.hand_shake_consecutive = 0
 
-    def _shoulder_center(self, pose_results, frame_shape) -> tuple | None:
+    def _shoulder_positions(self, pose_results, frame_shape) -> tuple | None:
+        """왼쪽·오른쪽 어깨 개별 픽셀 좌표 ((lx,ly),(rx,ry)) 반환."""
         if not pose_results.pose_landmarks:
             return None
         lm    = pose_results.pose_landmarks[0]
@@ -74,37 +84,85 @@ class BodySwayDetector:
         right = lm[_POSE_RIGHT_SHOULDER]
         if left.visibility < 0.5 or right.visibility < 0.5:
             return None
-        cx = int((left.x + right.x) * w / 2)
-        cy = int((left.y + right.y) * h / 2)
-        return (cx, cy)
+        return (int(left.x * w), int(left.y * h)), (int(right.x * w), int(right.y * h))
 
-    def _is_swaying(self) -> bool:
-        if len(self.position_history) < SWAY_WINDOW_FRAMES:
-            return False
-        xs = [p[0] for p in self.position_history]
-        ys = [p[1] for p in self.position_history]
-        return (max(xs) - min(xs) > SWAY_X_THRESHOLD or
-                max(ys) - min(ys) > SWAY_Y_THRESHOLD)
-
-    def get_sway_range(self) -> tuple[int, int]:
-        if len(self.position_history) < 2:
+    def _shoulder_range(self, history: list[tuple]) -> tuple[int, int]:
+        if len(history) < 2:
             return 0, 0
-        xs = [p[0] for p in self.position_history]
-        ys = [p[1] for p in self.position_history]
+        xs = [p[0] for p in history]
+        ys = [p[1] for p in history]
         return max(xs) - min(xs), max(ys) - min(ys)
 
-    def update(self, pose_results, frame, frame_shape) -> str | None:
+    def _hand_center(self, hand_results, frame_shape) -> tuple | None:
+        """감지된 손목들의 평균 위치 반환."""
+        if not hand_results or not hand_results.hand_landmarks:
+            return None
+        h, w = frame_shape[:2]
+        xs, ys = [], []
+        for hand_lms in hand_results.hand_landmarks:
+            wrist = hand_lms[_HAND_WRIST]
+            xs.append(int(wrist.x * w))
+            ys.append(int(wrist.y * h))
+        return (int(sum(xs) / len(xs)), int(sum(ys) / len(ys)))
+
+    def _is_hand_shaking(self) -> bool:
+        if len(self.hand_position_history) < HAND_SHAKE_WINDOW_FRAMES:
+            return False
+        xs = [p[0] for p in self.hand_position_history]
+        ys = [p[1] for p in self.hand_position_history]
+        return (max(xs) - min(xs) > HAND_SHAKE_THRESHOLD or
+                max(ys) - min(ys) > HAND_SHAKE_THRESHOLD)
+
+    def get_hand_shake_range(self) -> tuple[int, int]:
+        if len(self.hand_position_history) < 2:
+            return 0, 0
+        xs = [p[0] for p in self.hand_position_history]
+        ys = [p[1] for p in self.hand_position_history]
+        return max(xs) - min(xs), max(ys) - min(ys)
+
+    def _is_swaying(self) -> bool:
+        if (len(self.left_shoulder_history) < SWAY_WINDOW_FRAMES or
+                len(self.right_shoulder_history) < SWAY_WINDOW_FRAMES):
+            return False
+        lx, ly = self._shoulder_range(self.left_shoulder_history)
+        rx, ry = self._shoulder_range(self.right_shoulder_history)
+        left_sway  = lx > SWAY_X_THRESHOLD or ly > SWAY_Y_THRESHOLD
+        right_sway = rx > SWAY_X_THRESHOLD or ry > SWAY_Y_THRESHOLD
+        return left_sway and right_sway
+
+    def get_sway_range(self) -> tuple[int, int, int, int]:
+        """(왼X범위, 왼Y범위, 오른X범위, 오른Y범위)"""
+        lx, ly = self._shoulder_range(self.left_shoulder_history)
+        rx, ry = self._shoulder_range(self.right_shoulder_history)
+        return lx, ly, rx, ry
+
+    def update(self, pose_results, frame, frame_shape, hand_results=None) -> str | None:
         """
         Returns: 'trigger' | 'capturing' | 'ready' | None
         """
-        center = self._shoulder_center(pose_results, frame_shape)
-        if center is not None:
-            self.position_history.append(center)
-            if len(self.position_history) > SWAY_WINDOW_FRAMES:
-                self.position_history.pop(0)
+        positions = self._shoulder_positions(pose_results, frame_shape)
+        if positions is not None:
+            left_pos, right_pos = positions
+            self.left_shoulder_history.append(left_pos)
+            self.right_shoulder_history.append(right_pos)
+            if len(self.left_shoulder_history) > SWAY_WINDOW_FRAMES:
+                self.left_shoulder_history.pop(0)
+            if len(self.right_shoulder_history) > SWAY_WINDOW_FRAMES:
+                self.right_shoulder_history.pop(0)
         else:
-            self.position_history.clear()
+            self.left_shoulder_history.clear()
+            self.right_shoulder_history.clear()
             self.sway_consecutive = 0
+
+        # 손 위치 이력 업데이트
+        hand_center = self._hand_center(hand_results, frame_shape)
+        if hand_center is not None:
+            self.hand_position_history.append(hand_center)
+            if len(self.hand_position_history) > HAND_SHAKE_WINDOW_FRAMES:
+                self.hand_position_history.pop(0)
+        else:
+            self.hand_position_history.clear()
+            self.hand_shake_consecutive = 0
 
         if self.capturing:
             self.capture_countdown -= 1
@@ -122,13 +180,21 @@ class BodySwayDetector:
         else:
             self.sway_consecutive = max(0, self.sway_consecutive - 1)
 
+        if self._is_hand_shaking():
+            self.hand_shake_consecutive += 1
+        else:
+            self.hand_shake_consecutive = max(0, self.hand_shake_consecutive - 1)
+
         now = time.time()
+        hand_shaking = self.hand_shake_consecutive >= HAND_SHAKE_TRIGGER_FRAMES
         if (self.sway_consecutive >= SWAY_TRIGGER_FRAMES
+                and hand_shaking
                 and now - self.last_api_call_time > OPENAI_API_COOLDOWN_SEC):
             self.capturing = True
             self.capture_frames = [frame.copy()]
             self.capture_countdown = SWAY_CAPTURE_INTERVAL
-            print(f"[DANGER] 몸 흔들림 감지! 캡처 시작 (연속={self.sway_consecutive}프레임)")
+            print(f"[DANGER] 몸+손 흔들림 동시 감지! 캡처 시작 "
+                  f"(어깨={self.sway_consecutive}f, 손={self.hand_shake_consecutive}f)")
             return 'trigger'
 
         return None
@@ -351,6 +417,13 @@ def _run_detection_loop(
         return
 
     print(f"[{zone_id}][BRIDGE] Camera started ({_camera_label(camera_source)})")
+    print(f"[{zone_id}][BRIDGE] ── 감지 설정 ──────────────────────────────────")
+    print(f"[{zone_id}][BRIDGE]  손/얼굴 가림  : {'활성' if face_detector_video else 'Haar Cascade 폴백'}")
+    print(f"[{zone_id}][BRIDGE]  몸+손 흔들림  : {'활성' if pose_detector else '비활성 (모델 없음)'}")
+    print(f"[{zone_id}][BRIDGE]  얼굴 모자이크 : {'활성 — 위험 캡처 전 자동 처리' if face_detector_image else '비활성 (모델 없음)'}")
+    print(f"[{zone_id}][BRIDGE]  위험 감지 시  : 모자이크 처리 후 OpenAI API 분석 요청 가능")
+    print(f"[{zone_id}][BRIDGE]  API 쿨다운    : {OPENAI_API_COOLDOWN_SEC}초")
+    print(f"[{zone_id}][BRIDGE] ──────────────────────────────────────────────")
 
     last_face_region      = None
     occlusion_frame_count = 0
@@ -443,7 +516,7 @@ def _run_detection_loop(
             body_sway_signal = False
             if pose_results is not None:
                 try:
-                    sway_status = sway_detector.update(pose_results, frame, frame.shape)
+                    sway_status = sway_detector.update(pose_results, frame, frame.shape, hand_results)
 
                     if sway_status == 'ready' and not danger_state['pending']:
                         captured    = sway_detector.get_captured_frames()
@@ -458,7 +531,10 @@ def _run_detection_loop(
                             ).start()
                             print(f"[{zone_id}][DANGER] OpenAI API 분석 요청 중...")
 
-                    body_sway_signal = sway_detector.sway_consecutive >= SWAY_TRIGGER_FRAMES
+                    body_sway_signal = (
+                        sway_detector.sway_consecutive >= SWAY_TRIGGER_FRAMES
+                        and sway_detector.hand_shake_consecutive >= HAND_SHAKE_TRIGGER_FRAMES
+                    )
                 except Exception as e:
                     print(f"[{zone_id}][DANGER] 처리 오류 (카메라 유지): {e}")
 
@@ -476,10 +552,10 @@ def _run_detection_loop(
                     lm = pose_results.pose_landmarks[0]
                     ls = lm[_POSE_LEFT_SHOULDER]
                     rs = lm[_POSE_RIGHT_SHOULDER]
-                    if ls.visibility >= 0.5 and rs.visibility >= 0.5:
-                        cx = int((ls.x + rs.x) * w_img / 2)
-                        cy = int((ls.y + rs.y) * h_img / 2)
-                        cv2.circle(display, (cx, cy), 8, (255, 100, 0), -1)
+                    if ls.visibility >= 0.5:
+                        cv2.circle(display, (int(ls.x * w_img), int(ls.y * h_img)), 8, (255, 100, 0), -1)
+                    if rs.visibility >= 0.5:
+                        cv2.circle(display, (int(rs.x * w_img), int(rs.y * h_img)), 8, (0, 140, 255), -1)
 
                 alert = occlusion_active or body_sway_signal
                 status = ("SWEAT!" if occlusion_active else "") + (" SWAY!" if body_sway_signal else "") or "monitoring..."
@@ -490,14 +566,18 @@ def _run_detection_loop(
                 cv2.putText(display, f"faces: {len(faces)}", (10, 100),
                             cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 0), 2)
                 if pose_results is not None:
-                    x_range, y_range = sway_detector.get_sway_range()
+                    lx, ly, rx, ry = sway_detector.get_sway_range()
                     cv2.putText(display,
-                                f"Sway X:{x_range} Y:{y_range} [{sway_detector.sway_consecutive}f]",
-                                (10, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 200, 200), 1)
+                                f"L-Sway X:{lx} Y:{ly}  R-Sway X:{rx} Y:{ry} [{sway_detector.sway_consecutive}f]",
+                                (10, 130), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 200, 200), 1)
+                    hx_range, hy_range = sway_detector.get_hand_shake_range()
+                    cv2.putText(display,
+                                f"Hand X:{hx_range} Y:{hy_range} [{sway_detector.hand_shake_consecutive}f]",
+                                (10, 155), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (200, 100, 255), 1)
                 if sway_detector.capturing:
                     n = len(sway_detector.capture_frames)
                     cv2.putText(display, f"! CAPTURING {n}/{SWAY_CAPTURE_COUNT}",
-                                (10, 160), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+                                (10, 185), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
 
                 cv2.imshow(f"Bridge - {zone_id}", display)
                 if cv2.waitKey(1) & 0xFF == ord('q'):
