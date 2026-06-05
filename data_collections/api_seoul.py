@@ -231,10 +231,205 @@ def get_data(area_nm: str = None, limit: int = 50) -> list[dict]:
     return [dict(r) for r in rows]
 
 
+# ── 기간 수집 ────────────────────────────────────────────────────
+
+def collect_for_period(
+    area_nm: str,
+    days: int = 14,
+    interval_minutes: int = 60,
+):
+    """
+    지정한 지역의 데이터를 days일 동안 interval_minutes 간격으로 수집한다.
+
+    Parameters
+    ----------
+    area_nm           : 지역명 (예: "광화문·덕수궁")
+    days              : 수집 기간 (기본 14일)
+    interval_minutes  : 수집 간격 분 (기본 60분)
+    """
+    import time
+
+    total_calls  = days * 24 * 60 // interval_minutes
+    interval_sec = interval_minutes * 60
+    end_time     = time.time() + days * 86400
+
+    print(f"[수집 시작] {area_nm} | {days}일간 {interval_minutes}분 간격 | 총 {total_calls}회 예정")
+    print(f"[종료 예정] {datetime.fromtimestamp(end_time).strftime('%Y-%m-%d %H:%M')}\n")
+
+    count = 0
+    while time.time() < end_time:
+        try:
+            collect(area_nm)
+            count += 1
+            remaining = int((end_time - time.time()) / 3600)
+            print(f"  [{count}/{total_calls}] 완료 | 남은 시간 약 {remaining}시간\n")
+        except Exception as e:
+            print(f"  [오류] {e} — 다음 수집 때 재시도합니다.\n")
+
+        if time.time() + interval_sec < end_time:
+            time.sleep(interval_sec)
+        else:
+            break
+
+    print(f"[수집 완료] {area_nm} | 총 {count}건 수집")
+
+
+# ── 시뮬레이션 수집 ──────────────────────────────────────────────
+
+def simulate_period(area_nm: str, days: int = 14, interval_minutes: int = 60):
+    """
+    실제 API에서 현재값을 baseline으로 받아
+    days일치 시뮬레이션 데이터를 생성해 DB에 저장한다.
+
+    시간대·요일 패턴 + 적당한 노이즈를 적용해 현실감 있게 생성.
+    """
+    import random
+    from datetime import timedelta
+
+    print(f"[simulate] {area_nm} — 실제 데이터 수집 중...")
+    base = collect(area_nm)
+
+    _init_db()
+
+    # baseline 값 (None이면 기본값 사용)
+    base_ppltn_min   = base.get("area_ppltn_min") or 30000
+    base_ppltn_max   = base.get("area_ppltn_max") or 35000
+    base_temp        = base.get("temp") or 20.0
+    base_humidity    = base.get("humidity") or 60.0
+    base_wind_spd    = base.get("wind_spd") or 2.0
+    base_pm10        = base.get("pm10") or 30.0
+
+    now    = datetime.now()
+    start  = now - timedelta(days=days)
+    rows   = []
+    total  = days * 24 * 60 // interval_minutes
+    hours_per_day = 24 * 60 // interval_minutes
+
+    # 날짜별 일별 편차를 미리 고정 (같은 날은 같은 편차)
+    day_offsets = [random.uniform(-2.0, 2.0) for _ in range(days + 1)]
+
+    for i in range(total):
+        ts   = start + timedelta(minutes=i * interval_minutes)
+        hour = ts.hour
+        dow  = ts.weekday()  # 0=월 ~ 6=일
+        day_idx = i // hours_per_day
+
+        # ── 인구 시간대 가중치 ──────────────────────────────────
+        # 야간(0-6시) 낮음, 출퇴근(8-9, 17-19) 높음, 주말 주간 높음
+        if 0 <= hour < 6:
+            ppltn_factor = 0.25
+        elif 6 <= hour < 9:
+            ppltn_factor = 0.65 + (hour - 6) * 0.1
+        elif 9 <= hour < 12:
+            ppltn_factor = 0.85
+        elif 12 <= hour < 14:
+            ppltn_factor = 1.0   # 점심 피크
+        elif 14 <= hour < 17:
+            ppltn_factor = 0.90
+        elif 17 <= hour < 20:
+            ppltn_factor = 0.95  # 퇴근 피크
+        else:
+            ppltn_factor = 0.55
+
+        if dow >= 5:  # 주말: 평일 대비 주간 인구 10% 증가
+            ppltn_factor = min(ppltn_factor * 1.1, 1.0)
+
+        noise = random.uniform(0.90, 1.10)  # ±10% 노이즈
+        pmin  = int(base_ppltn_min * ppltn_factor * noise)
+        pmax  = int(base_ppltn_max * ppltn_factor * noise)
+        if pmin > pmax:
+            pmin, pmax = pmax, pmin
+
+        # ── 날씨 ───────────────────────────────────────────────
+        # 기온: 새벽 낮고 오후 높음 + 일별 완만한 변화
+        day_offset  = day_offsets[day_idx]         # 날짜별 고정 편차
+        hour_offset = -3 + (hour / 14.0) * 6      # 새벽 -3°C ~ 오후 +3°C
+        temp        = round(base_temp + day_offset + hour_offset + random.uniform(-0.5, 0.5), 1)
+
+        # 강수: 전체 시간의 약 15%를 비가 오는 날로 설정
+        rain_day = (i // (24 * 60 // interval_minutes)) % 7 in [2, 5]  # 3일, 6일째
+        if rain_day and 6 <= hour <= 18:
+            precpt_type   = "비"
+            precipitation = round(random.uniform(1.0, 15.0), 1)
+            humidity      = round(min(base_humidity + random.uniform(15, 25), 95), 1)
+        else:
+            precpt_type   = "없음"
+            precipitation = None
+            humidity      = round(base_humidity + random.uniform(-8, 8), 1)
+
+        wind_spd = round(max(0.0, base_wind_spd + random.uniform(-1.0, 1.5)), 1)
+        pm10     = round(max(5.0, base_pm10 + random.uniform(-10, 15)), 1)
+        air_idx  = "좋음" if pm10 < 30 else ("보통" if pm10 < 80 else "나쁨")
+
+        # ── 교통 ───────────────────────────────────────────────
+        if hour in (8, 9, 18, 19):
+            traffic_idx = random.choice(["지체", "정체", "서행"])
+            traffic_spd = round(random.uniform(5, 18), 1)
+        elif 10 <= hour <= 17:
+            traffic_idx = random.choice(["서행", "원활", "서행"])
+            traffic_spd = round(random.uniform(18, 35), 1)
+        else:
+            traffic_idx = "원활"
+            traffic_spd = round(random.uniform(35, 60), 1)
+
+        rows.append((
+            ts.isoformat(), area_nm,
+            None, pmin, pmax,                                  # congest_lvl은 별도 계산
+            None, None, None, None, None, None, None,          # 연령대 비율 (baseline 유지)
+            base.get("resnt_ppltn_rate"), base.get("non_resnt_ppltn_rate"),
+            precpt_type, precipitation, temp, None,
+            humidity, wind_spd, None, pm10, air_idx,
+            traffic_idx, traffic_spd,
+        ))
+
+    # 혼잡도 레벨 계산
+    def _congest(pmin):
+        mid = pmin
+        if mid < base_ppltn_min * 0.4:   return "여유"
+        if mid < base_ppltn_min * 0.7:   return "보통"
+        if mid < base_ppltn_min * 0.95:  return "약간 붐빔"
+        return "붐빔"
+
+    rows = [
+        (r[0], r[1], _congest(r[3])) + r[3:]
+        for r in rows
+    ]
+
+    with _conn() as c:
+        c.executemany("""
+            INSERT INTO city_data (
+                collected_at, area_nm,
+                area_congest_lvl, area_ppltn_min, area_ppltn_max,
+                ppltn_rate_10, ppltn_rate_20, ppltn_rate_30,
+                ppltn_rate_40, ppltn_rate_50, ppltn_rate_60, ppltn_rate_70,
+                resnt_ppltn_rate, non_resnt_ppltn_rate,
+                precpt_type, precipitation, temp, sensible_temp,
+                humidity, wind_spd, sky_stts, pm10, air_idx,
+                road_traffic_idx, road_traffic_spd
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+        """, rows)
+
+    print(f"[simulate] {area_nm} | {total}건 생성 완료 → {DB_PATH}")
+    return get_data(area_nm, limit=total)
+
+
 # ── CLI ───────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
+    # python -m data_collections.api_seoul "광화문·덕수궁"          ← 단건
+    # python -m data_collections.api_seoul "광화문·덕수궁" --period  ← 2주 수집
     area = sys.argv[1] if len(sys.argv) > 1 else "광화문·덕수궁"
+
+    if "--period" in sys.argv:
+        collect_for_period(area)
+        sys.exit(0)
+
+    if "--simulate" in sys.argv:
+        rows = simulate_period(area)
+        print(f"\n첫 3건 샘플:")
+        for r in rows[:3]:
+            print(f"  {r['collected_at']} | 인구 {r['area_ppltn_min']:,}~{r['area_ppltn_max']:,} | {r['precpt_type']} | {r['road_traffic_idx']}")
+        sys.exit(0)
 
     row = collect(area)
 
