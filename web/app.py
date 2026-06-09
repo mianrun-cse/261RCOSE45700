@@ -232,10 +232,14 @@ async def insight(req: InsightRequest):
     result = await facility_graph.ainvoke(state)
     return {
         "district": profile.get("district"),
+        "profile": profile,
         "insight": result.get("insight_result"),
         "recommendations": result.get("recommendations"),
     }
 
+@app.get("/districts")  
+async def get_districts():  
+    return {"districts": list(SAMPLE_PROFILES.keys())} 
 
 @app.post("/trigger/{key}")
 async def trigger(key: str):
@@ -368,3 +372,189 @@ def _serialize_state(s: dict) -> dict:
 @app.get("/", response_class=HTMLResponse)
 async def index():
     return (STATIC_DIR / "index.html").read_text(encoding="utf-8")
+
+@app.get("/dashboard", response_class=HTMLResponse)  
+async def dashboard():  
+    return (STATIC_DIR / "dashboard.html").read_text(encoding="utf-8")  
+
+@app.get("/store", response_class=HTMLResponse)
+async def store_page():
+    return (STATIC_DIR / "store.html").read_text(encoding="utf-8")
+
+# ── 카페 흐름 생성 API ────────────────────────────────────────────────────────
+
+class CafeFlowRequest(BaseModel):
+    district: str | None = None
+    profile:  dict | None = None
+
+
+@app.post("/cafe-flow")
+async def cafe_flow(req: CafeFlowRequest):
+    """
+    상권 프로필 → LLM이 무인카페 고객 흐름(flow stages) + 메뉴 + 좌석 선호도 생성.
+    store.html 시뮬레이션이 이 JSON을 그대로 사용한다.
+    """
+    profile = req.profile
+    if profile is None:
+        if req.district and req.district in SAMPLE_PROFILES:
+            profile = SAMPLE_PROFILES[req.district]
+        else:
+            raise HTTPException(
+                400,
+                f"profile 또는 SAMPLE_PROFILES에 존재하는 district 필요. "
+                f"사용 가능: {list(SAMPLE_PROFILES)}",
+            )
+
+    from llm_module.cafe_flow import generate_cafe_flow
+    result = await generate_cafe_flow(profile)
+    return result
+
+# ── 고객 쾌적도 요청 (시뮬레이션 → 실제 에이전트 처리) ──────────────────────
+
+class ComfortRequest(BaseModel):
+    persona_name: str
+    persona_age:  int
+    zone_id:      str
+    event_id:     str           # "too_hot" | "too_cold" | "stuffy"
+    message:      str
+    action:       dict          # {"type": "temperature"|"fan", "value": ...}
+    current_temp: float = 24.0
+
+
+@app.post("/persona-comfort")
+async def persona_comfort(req: ComfortRequest):
+    """
+    store.html 시뮬레이션의 페르소나가 불쾌감을 느낄 때 호출.
+
+    흐름:
+      1) customer_node → LLM 응답 (bot_response)
+      2) temperature_controller.handle() → 실제 온도 제어
+      3) broadcast("comfort_event") → store.html 실시간 반영
+    """
+    from llm_module.state import make_customer_state
+    from llm_module.agents.customer_agent import customer_node
+    from llm_module.actuators.temperature_controller import handle as temp_handle
+
+    # 1) customer_node 실행
+    state = make_customer_state(
+        zone_id=req.zone_id,
+        all_zone_ids=ZONE_IDS,
+        user_message=req.message,
+        customer_context={
+            "customer_name": req.persona_name,
+            "visit_count":   1,
+            "current_temp":  req.current_temp,
+            "remaining_min": 30,
+            "reserved_min":  60,
+        },
+        tts_enabled=False,
+    )
+    result = await customer_node(state)
+    bot_response = result.get("bot_response", {})
+    bot_message  = bot_response.get("message", "")
+
+    # 2) 온도/팬 제어 실행
+    ctrl_result = {"executed": False, "new_temp": req.current_temp}
+
+    action = req.action
+    if action.get("type") == "temperature":
+        delta    = float(action.get("value", -1))
+        new_temp = max(18.0, min(30.0, req.current_temp + delta))
+        await temp_handle(
+            zone_id=req.zone_id,
+            temperature=req.current_temp,
+            humidity=0,
+            reason=f"고객 요청 ({req.persona_name}): {req.message[:40]}",
+            target_temp_delta=delta,
+        )
+        ctrl_result = {"executed": True, "new_temp": new_temp, "type": "temperature"}
+
+    elif action.get("type") == "fan":
+        print(f"[{req.zone_id}][팬제어] {req.persona_name} 요청 → 팬 {action.get('value')}")
+        ctrl_result = {"executed": True, "type": "fan", "value": action.get("value")}
+
+    # 3) broadcast → store.html
+    await broadcast("comfort_event", {
+        "persona_name": req.persona_name,
+        "persona_age":  req.persona_age,
+        "zone_id":      req.zone_id,
+        "event_id":     req.event_id,
+        "message":      req.message,
+        "bot_message":  bot_message,
+        "action":       req.action,
+        "ctrl_result":  ctrl_result,
+    })
+
+    return {
+        "ok":          True,
+        "bot_message": bot_message,
+        "ctrl_result": ctrl_result,
+    }
+
+
+# ── 안전 이벤트 (시뮬레이션 페르소나 불안 신고) ──────────────────────────────
+
+class SafetyReportRequest(BaseModel):
+    persona_name:    str
+    persona_age:     int
+    zone_id:         str
+    event_id:        str        # "suspicious_person" | "harassment"
+    detection_type:  str
+    confidence:      float
+    severity:        str
+    evidence:        str
+    current_temp:    float = 24.0
+
+
+@app.post("/persona-safety")
+async def persona_safety(req: SafetyReportRequest):
+    """
+    store.html 시뮬레이션 페르소나가 불안을 느낄 때 호출.
+
+    흐름:
+      1) safety_node (기존 안전 에이전트) 실행
+      2) broadcast("safety_alert") → store.html 경보 오버레이 표시
+    """
+    from llm_module.state import make_safety_state
+    from llm_module.graph import facility_graph
+
+    state = make_safety_state(
+        zone_id=req.zone_id,
+        all_zone_ids=ZONE_IDS,
+        analysis_result={
+            "detection_type": req.detection_type,
+            "detected":       True,
+            "confidence":     req.confidence,
+            "severity":       req.severity,
+            "evidence":       req.evidence,
+            "action_required": "Alert operator",
+        },
+        signals={
+            "temperature": req.current_temp,
+            "humidity":    50.0,
+        },
+    )
+
+    result = await facility_graph.ainvoke(state)
+
+    orchestrator = result.get("orchestrator_decision", {})
+    bot_response = result.get("bot_response", {})
+
+    # broadcast → store.html 경보 오버레이
+    await broadcast("safety_alert", {
+        "persona_name":   req.persona_name,
+        "persona_age":    req.persona_age,
+        "zone_id":        req.zone_id,
+        "event_id":       req.event_id,
+        "severity":       req.severity,
+        "detection_type": req.detection_type,
+        "evidence":       req.evidence,
+        "bot_message":    bot_response.get("message", ""),
+        "decision":       orchestrator,
+    })
+
+    return {
+        "ok":         True,
+        "bot_message": bot_response.get("message", ""),
+        "decision":   orchestrator,
+    }

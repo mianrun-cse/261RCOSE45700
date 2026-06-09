@@ -1,0 +1,1142 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>☕ 무인카페 시뮬레이션</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #1a1a2e;
+      color: #e2e2f0;
+      font-family: 'Segoe UI', 'Noto Sans KR', sans-serif;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .topnav {
+      height: 48px;
+      background: #16162a;
+      border-bottom: 1px solid #2a2a45;
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      gap: 14px;
+      flex-shrink: 0;
+      z-index: 100;
+    }
+    .topnav .logo { font-size: 14px; font-weight: 700; color: #a78bfa; margin-right: 12px; }
+    .topnav a {
+      color: #888; text-decoration: none; font-size: 12px;
+      padding: 5px 12px; border-radius: 6px; transition: all 0.2s;
+    }
+    .topnav a:hover  { background: #1e1e38; color: #fff; }
+    .topnav a.active { background: #6366f1; color: #fff; font-weight: 600; }
+    .topnav .spacer  { flex: 1; }
+
+    .statusbar {
+      display: flex; align-items: center; gap: 12px;
+      padding: 0 16px; height: 34px;
+      background: #12121f; border-bottom: 1px solid #2a2a45;
+      flex-shrink: 0; font-size: 12px;
+    }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: #10b981; animation: pulse 1.5s infinite;
+    }
+    .status-dot.idle { background: #555; animation: none; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+
+    .layout { display: flex; flex: 1; overflow: hidden; }
+
+    .canvas-wrap {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      background: #13131f; overflow: hidden; position: relative;
+    }
+    canvas#store { image-rendering: pixelated; }
+
+    .panel {
+      width: 270px; background: #16162a;
+      border-left: 1px solid #2a2a45;
+      display: flex; flex-direction: column; flex-shrink: 0;
+    }
+    .panel-section { border-bottom: 1px solid #2a2a45; padding: 14px; }
+    .panel-section h3 {
+      font-size: 11px; color: #555577;
+      text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;
+    }
+
+    select {
+      width: 100%; background: #0f0f1a; border: 1px solid #2a2a45;
+      color: #e2e2f0; padding: 8px 10px; border-radius: 8px;
+      font-size: 13px; margin-bottom: 8px; cursor: pointer;
+    }
+
+    .btn {
+      width: 100%; padding: 9px; border: none; border-radius: 8px;
+      cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s;
+    }
+    .btn-primary { background: #6366f1; color: #fff; }
+    .btn-primary:hover:not(:disabled) { background: #4f46e5; }
+    .btn-primary:disabled { background: #2a2a45; color: #555; cursor: not-allowed; }
+    .btn-danger  { background: #ef4444; color: #fff; margin-top: 6px; }
+    .btn-danger:hover { background: #dc2626; }
+
+    .speed-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+    .speed-row label { font-size: 12px; color: #888; flex: 1; }
+    input[type=range] { flex: 2; accent-color: #6366f1; }
+    .speed-val { font-size: 12px; color: #a78bfa; width: 28px; text-align: right; }
+
+    .persona-list { flex: 1; overflow-y: auto; padding: 10px; min-height: 0; }
+    .persona-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 7px 10px; border-radius: 8px; margin-bottom: 5px;
+      background: #1e1e38; font-size: 12px;
+    }
+    .persona-avatar-sm {
+      width: 28px; height: 28px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 15px; flex-shrink: 0;
+    }
+    .persona-info { flex: 1; min-width: 0; }
+    .persona-name { font-weight: 600; color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .persona-action { font-size: 11px; color: #666; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .log-area {
+      height: 150px; overflow-y: auto; padding: 8px 12px;
+      font-size: 11px; line-height: 1.7;
+    }
+    .log-entry { margin-bottom: 2px; color: #666; }
+    .log-entry .ts   { color: #3a3a5a; margin-right: 4px; }
+    .log-entry .ev   { color: #a78bfa; }
+    .log-entry .hi   { color: #10b981; }
+    .log-entry .warn { color: #f59e0b; }
+
+    .stats-row {
+      display: flex; gap: 6px; padding: 10px 12px;
+      border-top: 1px solid #2a2a45; flex-shrink: 0;
+    }
+    .stat-mini {
+      flex: 1; background: #0f0f1a; border-radius: 8px;
+      padding: 7px 4px; text-align: center;
+    }
+    .stat-mini .v { font-size: 17px; font-weight: 700; color: #a78bfa; }
+    .stat-mini .l { font-size: 10px; color: #444; margin-top: 1px; }
+  </style>
+</head>
+<body>
+
+<nav class="topnav">
+  <span class="logo">☕ 무인카페 AI</span>
+  <a href="/">🤖 에이전트 흐름</a>
+  <a href="/dashboard">📍 상권 대시보드</a>
+  <a href="/store" class="active">☕ 카페 시뮬레이션</a>
+  <span class="spacer"></span>
+  <span id="clock" style="font-size:12px;color:#555;"></span>
+</nav>
+
+<div class="statusbar">
+  <div class="status-dot idle" id="statusDot"></div>
+  <span id="statusText" style="color:#555;">대기 중 — 상권을 선택하고 시뮬레이션을 시작하세요</span>
+</div>
+
+<div class="layout">
+  <div class="canvas-wrap" id="canvasWrap">
+    <canvas id="store"></canvas>
+  </div>
+
+  <aside class="panel">
+    <div class="panel-section">
+      <h3>⚙️ 시뮬레이션 설정</h3>
+      <select id="districtSelect">
+        <option value="">상권 선택...</option>
+      </select>
+      <button class="btn btn-primary" id="startBtn" disabled onclick="startSim()">
+        ▶ 시뮬레이션 시작
+      </button>
+      <button class="btn btn-danger" id="stopBtn" style="display:none" onclick="stopSim()">
+        ■ 정지
+      </button>
+      <div class="speed-row">
+        <label>시뮬 속도</label>
+        <input type="range" id="speedSlider" min="0.5" max="6" step="0.5" value="1"
+               oninput="setSpeed(this.value)"/>
+        <span class="speed-val" id="speedVal">1×</span>
+      </div>
+    </div>
+
+    <div class="panel-section" style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden;">
+      <h3>🧍 현재 카페 내 인원</h3>
+      <div class="persona-list" id="personaList">
+        <div style="color:#444;font-size:12px;text-align:center;margin-top:20px;">
+          시뮬레이션 시작 후 표시됩니다
+        </div>
+      </div>
+    </div>
+
+    <div class="panel-section" style="padding:10px 14px 4px;">
+      <h3>📋 이벤트 로그</h3>
+    </div>
+    <div class="log-area" id="logArea"></div>
+
+    <div class="stats-row">
+      <div class="stat-mini"><div class="v" id="sTotal">0</div><div class="l">총방문</div></div>
+      <div class="stat-mini"><div class="v" id="sActive">0</div><div class="l">현재</div></div>
+      <div class="stat-mini"><div class="v" id="sOrders">0</div><div class="l">주문</div></div>
+      <div class="stat-mini"><div class="v" id="sAvgAge">—</div><div class="l">평균연령</div></div>
+    </div>
+  </aside>
+</div>
+
+<script>
+// ═══════════════════════════════════════════════════════════════
+//  roundRect POLYFILL  ← fixes black canvas on most browsers
+// ═══════════════════════════════════════════════════════════════
+if (!CanvasRenderingContext2D.prototype.roundRect) {
+  CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2);
+    this.beginPath();
+    this.moveTo(x + r, y);
+    this.arcTo(x + w, y,     x + w, y + h, r);
+    this.arcTo(x + w, y + h, x,     y + h, r);
+    this.arcTo(x,     y + h, x,     y,     r);
+    this.arcTo(x,     y,     x + w, y,     r);
+    this.closePath();
+    return this;
+  };
+}
+let personas        = [];
+let simRunning      = false;
+let simSpeed        = 1;
+let simTime         = 8 * 60;
+let lastTs          = null;
+let lastRaf         = null;
+let spawnTimer      = 0;
+let totalVisits     = 0;
+let totalOrders     = 0;
+let districtProfile = null;
+let nameIdx         = 0;
+let bgCache         = null;
+
+// ═══════════════════════════════════════════════════════════════
+//  CANVAS & TILE CONSTANTS
+// ═══════════════════════════════════════════════════════════════
+const TILE = 52;
+const COLS = 20;
+const ROWS = 15;
+
+const canvas = document.getElementById("store");
+const ctx    = canvas.getContext("2d");
+const wrap   = document.getElementById("canvasWrap");
+
+function resizeCanvas() {
+  const maxW  = wrap.clientWidth  - 16;
+  const maxH  = wrap.clientHeight - 16;
+  const scale = Math.min(maxW / (COLS * TILE), maxH / (ROWS * TILE));
+  canvas.width        = COLS * TILE;
+  canvas.height       = ROWS * TILE;
+  canvas.style.width  = Math.floor(COLS * TILE * scale) + "px";
+  canvas.style.height = Math.floor(ROWS * TILE * scale) + "px";
+  bgCache = null;
+}
+window.addEventListener("resize", () => { resizeCanvas(); if (!simRunning) drawCafe(); });
+resizeCanvas();
+
+// ═══════════════════════════════════════════════════════════════
+//  ZONE LAYOUT
+// ═══════════════════════════════════════════════════════════════
+const ZONES = [
+  { id:"window",      label:"창가",         col:0,  row:0,  w:20, h:1,  color:"#1e2a3a", icon:"",   type:"wall"    },
+  { id:"kiosk",       label:"키오스크",      col:1,  row:2,  w:3,  h:3,  color:"#1e1e3a", icon:"🖥️",  type:"service" },
+  { id:"machine",     label:"음료 제조",     col:1,  row:6,  w:3,  h:3,  color:"#2a1e3a", icon:"☕",  type:"service" },
+  { id:"pickup",      label:"픽업 대",       col:1,  row:10, w:3,  h:2,  color:"#1e2a1e", icon:"📦",  type:"service" },
+  { id:"icemachine",  label:"얼음/물",       col:4,  row:10, w:2,  h:2,  color:"#1e2a2a", icon:"🧊",  type:"service" },
+  { id:"dessert",     label:"디저트",        col:4,  row:6,  w:2,  h:3,  color:"#3a2a1e", icon:"🍰",  type:"service" },
+  { id:"window_seat", label:"창가석",        col:7,  row:0,  w:11, h:3,  color:"#1a2535", icon:"🪟",  type:"seat"    },
+  { id:"study_zone",  label:"공부존",        col:7,  row:4,  w:5,  h:4,  color:"#1a1a30", icon:"💻",  type:"seat"    },
+  { id:"table_2a",    label:"2인석",         col:13, row:4,  w:3,  h:2,  color:"#1e1e2a", icon:"🪑",  type:"seat"    },
+  { id:"table_2b",    label:"2인석",         col:13, row:7,  w:3,  h:2,  color:"#1e1e2a", icon:"🪑",  type:"seat"    },
+  { id:"table_2c",    label:"2인석",         col:17, row:4,  w:3,  h:2,  color:"#1e1e2a", icon:"🪑",  type:"seat"    },
+  { id:"table_2d",    label:"2인석",         col:17, row:7,  w:3,  h:2,  color:"#1e1e2a", icon:"🪑",  type:"seat"    },
+  { id:"sofa_lounge", label:"소파 라운지",   col:7,  row:9,  w:9,  h:4,  color:"#2a1e38", icon:"🛋️",  type:"seat"    },
+  { id:"group_table", label:"단체석",        col:17, row:9,  w:3,  h:4,  color:"#1e2a1e", icon:"👥",  type:"seat"    },
+  { id:"trash",       label:"쓰레기/반납",   col:6,  row:12, w:2,  h:2,  color:"#2a2a1e", icon:"🗑️",  type:"util"    },
+  { id:"bathroom",    label:"화장실",        col:0,  row:12, w:1,  h:3,  color:"#1e2a2a", icon:"🚻",  type:"util"    },
+  { id:"entrance",    label:"입구",          col:8,  row:13, w:4,  h:2,  color:"#2a3a2a", icon:"🚪",  type:"entrance"},
+];
+
+const SEAT_ZONES = [
+  "window_seat","study_zone","table_2a","table_2b",
+  "table_2c","table_2d","sofa_lounge","group_table",
+];
+
+function getZone(id) { return ZONES.find(z => z.id === id); }
+
+function zoneCenterTile(id) {
+  const z = getZone(id);
+  if (!z) return { x: 10, y: 7 };
+  const ox = (Math.random() - 0.5) * Math.max(0.5, z.w - 1.5);
+  const oy = (Math.random() - 0.5) * Math.max(0.5, z.h - 1.5);
+  return { x: z.col + z.w / 2 + ox, y: z.row + z.h / 2 + oy };
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CONSTANTS
+// ═══════════════════════════════════════════════════════════════
+const COLORS = [
+  "#6366f1","#8b5cf6","#ec4899","#f59e0b",
+  "#10b981","#3b82f6","#f43f5e","#14b8a6",
+  "#a78bfa","#fbbf24","#34d399","#60a5fa",
+];
+
+const NAMES = [
+  "김민준","이서연","박지호","최수아","정하늘","윤도현",
+  "강나은","임재원","한소희","오민서","신태양","류아린",
+  "백준혁","송유진","조성민","황지은","문세훈","노다혜",
+  "엄기현","방소율","안철수","이영희","박민호","김수진",
+  "서준호","최지아","윤성재","박하은","이준서","김나영",
+];
+
+const EMOJI_POOLS = {
+  teen:   ["🐱","🐰","🦊","🐹"],
+  twenty: ["🐶","🦝","🐼","🐨"],
+  thirty: ["🐻","🦁","🐯","🦓"],
+  forty:  ["🐺","🦊","🦝","🐗"],
+  fifty:  ["🐘","🦔","🐃","🦉"],
+  sixty:  ["🦋","🐢","🦦","🐓"],
+};
+
+function pickEmojiPool(age) {
+  if (age < 20) return EMOJI_POOLS.teen;
+  if (age < 30) return EMOJI_POOLS.twenty;
+  if (age < 40) return EMOJI_POOLS.thirty;
+  if (age < 50) return EMOJI_POOLS.forty;
+  if (age < 60) return EMOJI_POOLS.fifty;
+  return EMOJI_POOLS.sixty;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════════
+const seatOccupancy = {};
+SEAT_ZONES.forEach(id => { seatOccupancy[id] = null; });
+// ═══════════════════════════════════════════════════════════════
+//  FLOW CONFIG  (from /cafe-flow API)
+// ═══════════════════════════════════════════════════════════════
+let FLOW_CONFIG = null;
+
+function getFlowStages()   { return FLOW_CONFIG?.flow_stages      || []; }
+function getDrinkMenu()    { return FLOW_CONFIG?.drink_menu       || ["아메리카노","라떼"]; }
+function getDessertMenu()  { return FLOW_CONFIG?.dessert_menu     || ["크로와상","머핀"]; }
+function getSpawnRate(p)   { return FLOW_CONFIG?.spawn_rate?.[p]  ?? 10; }
+function getMaxCapacity()  { return FLOW_CONFIG?.max_capacity     ?? 14; }
+function getPersonaTypes() { return FLOW_CONFIG?.persona_types    ?? []; }
+function getSeatPrefs()    { return FLOW_CONFIG?.seat_preferences ?? {}; }
+
+async function loadCafeFlow(district) {
+  const res = await fetch("/cafe-flow", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body:    JSON.stringify({ district }),
+  });
+  if (!res.ok) throw new Error(`cafe-flow API error: ${res.status}`);
+  FLOW_CONFIG = await res.json();
+  console.log("[CafeFlow] loaded:", FLOW_CONFIG);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  HELPERS
+// ═══════════════════════════════════════════════════════════════
+function rand(lo, hi) { return lo + Math.random() * (hi - lo); }
+
+function fmtTime(m) {
+  const h  = Math.floor(m / 60) % 24;
+  const mm = Math.floor(m % 60);
+  return `${String(h).padStart(2,"0")}:${String(mm).padStart(2,"0")}`;
+}
+
+function timePeriod() {
+  const h = Math.floor(simTime / 60) % 24;
+  if (h >= 7  && h < 11) return "morning";
+  if (h >= 11 && h < 17) return "afternoon";
+  return "evening";
+}
+
+function weightedPick(weights) {
+  const entries = Object.entries(weights);
+  const total   = entries.reduce((s, [, w]) => s + w, 0);
+  let   r       = Math.random() * total;
+  for (const [id, w] of entries) {
+    r -= w;
+    if (r <= 0) return id;
+  }
+  return entries[0][0];
+}
+
+function log(html) {
+  const area = document.getElementById("logArea");
+  const d    = document.createElement("div");
+  d.className = "log-entry";
+  d.innerHTML = `<span class="ts">${fmtTime(simTime)}</span>${html}`;
+  area.prepend(d);
+  while (area.children.length > 100) area.removeChild(area.lastChild);
+}
+
+function updateStats() {
+  document.getElementById("sTotal").textContent  = totalVisits;
+  document.getElementById("sActive").textContent = personas.length;
+  document.getElementById("sOrders").textContent = totalOrders;
+  if (personas.length > 0) {
+    const avg = Math.round(personas.reduce((s, p) => s + p.age, 0) / personas.length);
+    document.getElementById("sAvgAge").textContent = avg;
+  } else {
+    document.getElementById("sAvgAge").textContent = "—";
+  }
+}
+
+function updatePersonaList() {
+  const el = document.getElementById("personaList");
+  if (!personas.length) {
+    el.innerHTML = '<div style="color:#444;font-size:12px;text-align:center;margin-top:16px;">현재 카페 내 인원 없음</div>';
+    return;
+  }
+  el.innerHTML = personas.map(p => `
+    <div class="persona-item">
+      <div class="persona-avatar-sm" style="background:${p.color}22;border:2px solid ${p.color};">
+        ${p.emoji}
+      </div>
+      <div class="persona-info">
+        <div class="persona-name">${p.name} (${p.age}세)</div>
+        <div class="persona-action">
+          ${p.currentStage?.label ?? "이동 중"}
+          ${p.actionLabel ? "— " + p.actionLabel : ""}
+        </div>
+      </div>
+    </div>
+  `).join("");
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  PERSONA SPAWN
+// ═══════════════════════════════════════════════════════════════
+function pickPersonaType() {
+  const types = getPersonaTypes();
+  if (!types.length) return null;
+  const total = types.reduce((s, t) => s + (t.weight || 1), 0);
+  let r = Math.random() * total;
+  for (const t of types) {
+    r -= t.weight || 1;
+    if (r <= 0) return t;
+  }
+  return types[0];
+}
+
+function pickSeatFromConfig(age) {
+  const prefs  = getSeatPrefs();
+  const group  = age < 30 ? "under_30"
+               : age < 40 ? "30s"
+               : age < 50 ? "40s"
+               : "50plus";
+  const weights = prefs[group] || {};
+  if (!Object.keys(weights).length)
+    return SEAT_ZONES[Math.floor(Math.random() * SEAT_ZONES.length)];
+  return weightedPick(weights);
+}
+
+function buildPersonalFlow() {
+  return getFlowStages()
+    .filter(s => Math.random() < (s.probability ?? 1.0))
+    .map(s => ({ ...s }));
+}
+
+function spawnPersona() {
+  const ptype  = pickPersonaType();
+  const ageMin = ptype?.age_range?.[0] ?? 19;
+  const ageMax = ptype?.age_range?.[1] ?? 65;
+  const age    = Math.floor(ageMin + Math.random() * (ageMax - ageMin));
+
+  const pool  = ptype?.emoji_pool?.length ? ptype.emoji_pool : pickEmojiPool(age);
+  const emoji = pool[Math.floor(Math.random() * pool.length)];
+  const color = COLORS[Math.floor(Math.random() * COLORS.length)];
+  const name  = NAMES[nameIdx++ % NAMES.length];
+
+  const drinks   = getDrinkMenu();
+  const desserts = getDessertMenu();
+  const drink    = drinks[Math.floor(Math.random() * drinks.length)];
+  const dessert  = Math.random() < 0.3
+    ? desserts[Math.floor(Math.random() * desserts.length)]
+    : null;
+
+  const myFlow = buildPersonalFlow();
+
+  const p = {
+    id: Math.random().toString(36).slice(2),
+    name, age, emoji, color, drink, dessert,
+    personaType:         ptype?.label ?? "방문객",
+    preferredActivities: ptype?.preferred_activities ?? [],
+    x: 10 + (Math.random() - 0.5) * 2,
+    y: 14, tx: 10, ty: 14,
+    flowQueue:     myFlow,
+    currentStage:  null,
+    state:         "walking",
+    stateTimer:    0,
+    actionLabel:   null,
+    speechBubble:  null,
+    speechTimer:   0,
+    preferredSeat: pickSeatFromConfig(age),
+    assignedSeat:  null,
+  };
+
+  const first = p.flowQueue.shift();
+  if (first) {
+    p.currentStage = first;
+    const dest = getStageTarget(first, p);
+    p.tx = dest.x; p.ty = dest.y;
+  }
+
+  personas.push(p);
+  totalVisits++;
+  updateStats();
+  log(`<span class="ev">[입장]</span> ${emoji} <b>${name}</b> (${age}세 ${p.personaType})`);
+  return p;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  STAGE MACHINE
+// ═══════════════════════════════════════════════════════════════
+function getStageTarget(stage, p) {
+  if (!stage.zone || stage.id === "sitting") return zoneCenterTile(p.preferredSeat);
+  return zoneCenterTile(stage.zone);
+}
+
+function pickStageAction(stage, p) {
+  if (stage.id === "sitting" && p.preferredActivities?.length)
+    return p.preferredActivities[Math.floor(Math.random() * p.preferredActivities.length)];
+  const acts = stage.actions || ["👀 둘러보는 중"];
+  return acts[Math.floor(Math.random() * acts.length)];
+}
+
+function arriveAtStage(p) {
+  const stage = p.currentStage;
+  if (!stage) { startLeaving(p); return; }
+
+  if (stage.id === "kiosk") {
+    p.speechBubble = `${p.drink}${p.dessert ? " + " + p.dessert : ""} 🧋`;
+    p.speechTimer  = 5;
+    totalOrders++;
+    updateStats();
+    log(`<span class="ev">[주문]</span> ${p.emoji} ${p.name} — ${p.drink}${p.dessert ? " + "+p.dessert : ""}`);
+  }
+
+  if (stage.id === "pickup") {
+    p.speechBubble = `${p.drink} ☕`;
+    p.speechTimer  = 3;
+    log(`<span class="hi">[픽업]</span> ${p.emoji} ${p.name} 음료 픽업`);
+  }
+
+  if (stage.id === "sitting") {
+    let seat = p.preferredSeat;
+    if (seatOccupancy[seat]) {
+      const free = SEAT_ZONES.filter(s => !seatOccupancy[s]);
+      if (free.length) seat = free[Math.floor(Math.random() * free.length)];
+    }
+    seatOccupancy[seat] = p.id;
+    p.assignedSeat = seat;
+    log(`<span class="hi">[착석]</span> ${p.emoji} ${p.name} → ${getZone(seat)?.label || seat}`);
+  }
+
+  if (stage.id === "trash" && p.assignedSeat) {
+    seatOccupancy[p.assignedSeat] = null;
+    p.assignedSeat = null;
+  }
+
+  if (stage.id === "exit") { startLeaving(p); return; }
+
+  const [lo, hi] = stage.duration_range ?? [5, 15];
+  p.actionLabel = pickStageAction(stage, p);
+  p.state       = "acting";
+  p.stateTimer  = rand(lo, hi) / simSpeed;
+}
+
+function advanceToNextStage(p) {
+  const next = p.flowQueue.shift();
+  if (!next) { startLeaving(p); return; }
+  p.currentStage = next;
+  p.state        = "walking";
+  p.actionLabel  = null;
+  const dest     = getStageTarget(next, p);
+  p.tx = dest.x; p.ty = dest.y;
+}
+
+function startLeaving(p) {
+  p.state        = "leaving";
+  p.currentStage = null;
+  p.actionLabel  = "🚶 퇴장 중";
+  p.tx           = 10 + (Math.random() - 0.5) * 2;
+  p.ty           = 16;
+  if (p.assignedSeat) {
+    seatOccupancy[p.assignedSeat] = null;
+    p.assignedSeat = null;
+  }
+  log(`<span class="ev">[퇴장]</span> ${p.emoji} ${p.name} 퇴장`);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  UPDATE
+// ═══════════════════════════════════════════════════════════════
+function updatePersonas(dtSec) {
+  const speed = 3.0 * simSpeed;
+  for (let i = personas.length - 1; i >= 0; i--) {
+    const p = personas[i];
+
+    if (p.speechTimer > 0) {
+      p.speechTimer -= dtSec;
+      if (p.speechTimer <= 0) p.speechBubble = null;
+    }
+
+    if (p.state === "walking") {
+      const dx = p.tx - p.x, dy = p.ty - p.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < 0.12) {
+        p.x = p.tx; p.y = p.ty;
+        arriveAtStage(p);
+      } else {
+        p.x += (dx/dist) * speed * dtSec;
+        p.y += (dy/dist) * speed * dtSec;
+      }
+    } else if (p.state === "acting") {
+      p.stateTimer -= dtSec;
+      if (p.stateTimer <= 0) advanceToNextStage(p);
+    } else if (p.state === "leaving") {
+      const dx = p.tx - p.x, dy = p.ty - p.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if (dist < 0.2 || p.y > ROWS + 1) {
+        if (p.assignedSeat) seatOccupancy[p.assignedSeat] = null;
+        personas.splice(i, 1);
+        updateStats();
+      } else {
+        p.x += (dx/dist) * speed * dtSec;
+        p.y += (dy/dist) * speed * dtSec;
+      }
+    }
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  DRAWING
+// ═══════════════════════════════════════════════════════════════
+function buildBgCache() {
+  const oc = document.createElement("canvas");
+  oc.width = canvas.width; oc.height = canvas.height;
+  const ox = oc.getContext("2d");
+
+  // Floor
+  ox.fillStyle = "#1c1a28";
+  ox.fillRect(0, 0, oc.width, oc.height);
+
+  // Grid lines
+  ox.strokeStyle = "#22203a"; ox.lineWidth = 0.5;
+  for (let c = 0; c <= COLS; c++) {
+    ox.beginPath(); ox.moveTo(c*TILE, 0); ox.lineTo(c*TILE, ROWS*TILE); ox.stroke();
+  }
+  for (let r = 0; r <= ROWS; r++) {
+    ox.beginPath(); ox.moveTo(0, r*TILE); ox.lineTo(COLS*TILE, r*TILE); ox.stroke();
+  }
+
+  // Zones
+  ZONES.forEach(z => {
+    if (z.type === "floor") return;
+    const x = z.col*TILE, y = z.row*TILE, w = z.w*TILE, h = z.h*TILE;
+
+    ox.fillStyle = z.color;
+    ox.beginPath(); ox.roundRect(x+2, y+2, w-4, h-4, 10); ox.fill();
+
+    const border = {
+      service:"#6366f1", seat:"#2a2a55",
+      util:"#3a3a2a", entrance:"#2a5a2a", wall:"#1e3a5a"
+    }[z.type] || "#3a3a5a";
+    ox.strokeStyle = border;
+    ox.lineWidth   = z.type === "service" ? 2 : 1;
+    ox.beginPath(); ox.roundRect(x+2, y+2, w-4, h-4, 10); ox.stroke();
+
+    if (z.icon) {
+      const fs = Math.min(z.w, z.h) * TILE * 0.38;
+      ox.font = `${fs}px serif`;
+      ox.textAlign = "center"; ox.textBaseline = "middle";
+      ox.fillText(z.icon, x+w/2, y+h/2 - (z.label ? 8 : 0));
+    }
+    if (z.label) {
+      ox.font      = `bold ${Math.min(TILE*0.21, 11)}px 'Segoe UI', sans-serif`;
+      ox.fillStyle = "rgba(200,200,240,0.7)";
+      ox.textAlign = "center"; ox.textBaseline = "middle";
+      ox.fillText(z.label, x+w/2, y+h/2 + (z.icon ? 14 : 0));
+    }
+  });
+
+  // Window plants
+  ox.font = "13px serif"; ox.textAlign = "center"; ox.textBaseline = "middle";
+  for (let c = 1; c < COLS; c += 4)
+    ox.fillText("🌿", c*TILE + TILE/2, TILE/2);
+
+  bgCache = oc;
+}
+
+function drawCafe() {
+  if (!bgCache) buildBgCache();
+  ctx.drawImage(bgCache, 0, 0);
+
+  // Occupied seat tint
+  SEAT_ZONES.forEach(sid => {
+    if (!seatOccupancy[sid]) return;
+    const z = getZone(sid);
+    if (!z) return;
+    ctx.fillStyle = "rgba(99,102,241,0.10)";
+    ctx.beginPath();
+    ctx.roundRect(z.col*TILE+2, z.row*TILE+2, z.w*TILE-4, z.h*TILE-4, 10);
+    ctx.fill();
+  });
+}
+
+function drawPersonas() {
+  personas.forEach(p => {
+    const px = p.x * TILE;
+    const py = p.y * TILE;
+    const r  = 16;
+
+    // Shadow
+    ctx.fillStyle = "rgba(0,0,0,0.25)";
+    ctx.beginPath();
+    ctx.ellipse(px, py+18, r, 5, 0, 0, Math.PI*2);
+    ctx.fill();
+
+    // Glow when sitting
+    if (p.state === "acting" && p.currentStage?.id === "sitting") {
+      ctx.shadowBlur = 10; ctx.shadowColor = p.color;
+    }
+
+    // Color ring
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.arc(px, py, r+2, 0, Math.PI*2); ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // White inner
+    ctx.fillStyle = "#fff";
+    ctx.beginPath(); ctx.arc(px, py, r-1, 0, Math.PI*2); ctx.fill();
+
+    // Emoji
+    ctx.font = "18px serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillText(p.emoji, px, py);
+
+    // Action bubble
+    if (p.actionLabel) {
+      ctx.font = "bold 10px 'Segoe UI', sans-serif";
+      const tw = ctx.measureText(p.actionLabel).width + 16;
+      const bx = px - tw/2, by = py - 40, bh = 18;
+
+      ctx.fillStyle = "rgba(20,20,50,0.92)";
+      ctx.beginPath();
+      ctx.moveTo(px-5, by+bh); ctx.lineTo(px, by+bh+6); ctx.lineTo(px+5, by+bh);
+      ctx.closePath(); ctx.fill();
+
+      ctx.fillStyle = "rgba(20,20,50,0.92)";
+      ctx.beginPath(); ctx.roundRect(bx, by, tw, bh, 5); ctx.fill();
+      ctx.strokeStyle = p.color + "88"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.roundRect(bx, by, tw, bh, 5); ctx.stroke();
+
+      ctx.fillStyle = "#e2e2f0";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(p.actionLabel, px, by+bh/2);
+    }
+
+    // Speech bubble
+    if (p.speechBubble) {
+      ctx.font = "bold 11px 'Segoe UI', sans-serif";
+      const tw = ctx.measureText(p.speechBubble).width + 18;
+      const bx = px - tw/2, by = py - 64, bh = 20;
+
+      ctx.fillStyle = "#fff";
+      ctx.beginPath(); ctx.roundRect(bx, by, tw, bh, 8); ctx.fill();
+      ctx.strokeStyle = p.color; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.roundRect(bx, by, tw, bh, 8); ctx.stroke();
+
+      ctx.fillStyle = "#1a1a2e";
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(p.speechBubble, px, by+bh/2);
+    }
+
+    // Name tag
+    ctx.font = "bold 9px 'Segoe UI', sans-serif";
+    ctx.fillStyle = "#e2e2f0";
+    ctx.textAlign = "center"; ctx.textBaseline = "top";
+    const shortName = p.name.length > 5 ? p.name.slice(0,4)+"…" : p.name;
+    ctx.fillText(shortName, px, py+r+3);
+  });
+}
+
+function drawHUD() {
+  const period   = timePeriod();
+  const pColor   = { morning:"#f59e0b", afternoon:"#10b981", evening:"#6366f1" }[period];
+  const periodKr = { morning:"오전",    afternoon:"오후",     evening:"저녁"    }[period];
+
+  ctx.fillStyle = "rgba(12,12,28,0.85)";
+  ctx.beginPath(); ctx.roundRect(8, 8, 130, 36, 8); ctx.fill();
+
+  ctx.font = "bold 15px 'Segoe UI', monospace";
+  ctx.fillStyle = "#a78bfa"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillText("🕐 " + fmtTime(simTime), 16, 26);
+
+  ctx.font = "bold 11px 'Segoe UI', sans-serif";
+  ctx.fillStyle = pColor;
+  ctx.fillText(periodKr, 112, 26);
+
+  ctx.fillStyle = "rgba(12,12,28,0.85)";
+  ctx.beginPath(); ctx.roundRect(8, 50, 130, 26, 8); ctx.fill();
+
+  ctx.font = "11px 'Segoe UI', sans-serif";
+  ctx.fillStyle = "#888"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillText(`👥 ${personas.length}명 이용 중`, 16, 63);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  MAIN LOOP
+// ═══════════════════════════════════════════════════════════════
+function getSpawnInterval() {
+  const base = getSpawnRate(timePeriod());
+  return Math.max(1.5, (base - simSpeed * 1.2) / simSpeed);
+}
+
+// ── REPLACE your existing loop() function ─────────────────────
+function loop(ts) {
+  if (!simRunning) return;
+  const dt = lastTs ? Math.min((ts - lastTs) / 1000, 0.1) : 0;
+  lastTs   = ts;
+  simTime += dt * 4 * simSpeed;
+
+  spawnTimer -= dt;
+  if (spawnTimer <= 0 && personas.length < getMaxCapacity()) {
+    spawnPersona();
+    spawnTimer = getSpawnInterval();
+  }
+
+  tickComfortSafety(dt);   // ✅ NEW
+
+  updatePersonas(dt);
+  drawCafe();
+  drawPersonas();
+  drawAlert();             // ✅ NEW — draw before HUD so HUD is on top
+  drawHUD();
+  updatePersonaList();
+
+  lastRaf = requestAnimationFrame(loop);
+}
+
+
+// ═══════════════════════════════════════════════════════════════
+//  CONTROLS
+// ═══════════════════════════════════════════════════════════════
+async function startSim() {
+  const district = document.getElementById("districtSelect").value;
+  if (!district) return;
+
+  const btn = document.getElementById("startBtn");
+  btn.disabled    = true;
+  btn.textContent = "⏳ AI 분석 중...";
+  document.getElementById("statusDot").classList.remove("idle");
+  document.getElementById("statusText").textContent = "⏳ 상권 분석 중...";
+
+  try {
+    await loadCafeFlow(district);
+    try {
+      const res = await fetch("/insight", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ district }),
+      });
+      districtProfile = (await res.json()).profile || null;
+    } catch(e) { console.warn("Profile fetch failed"); }
+  } catch(e) {
+    alert(`흐름 생성 실패: ${e.message}`);
+    btn.disabled    = false;
+    btn.textContent = "▶ 시뮬레이션 시작";
+    document.getElementById("statusDot").classList.add("idle");
+    document.getElementById("statusText").textContent = "오류 발생";
+    return;
+  }
+
+  // Reset state
+  personas   = []; totalVisits = 0; totalOrders = 0;
+  simTime    = 8 * 60; spawnTimer = 1.5;
+  simRunning = true; nameIdx = 0;
+  SEAT_ZONES.forEach(id => { seatOccupancy[id] = null; });
+  bgCache = null;
+
+  btn.style.display = "none";
+  document.getElementById("stopBtn").style.display = "block";
+  document.getElementById("statusText").textContent = `☕ 시뮬레이션 실행 중 — ${district}`;
+
+  updateStats();
+  const types = getPersonaTypes();
+  log(`<span class="ev">[시작]</span> ☕ ${district} 무인카페 시뮬레이션 시작 🚀`);
+  log(`<span class="hi">[설정]</span> 페르소나: ${types.map(t => t.label).join(", ")}`);
+  log(`<span class="hi">[설정]</span> 메뉴: ${getDrinkMenu().slice(0,4).join(", ")} 외 ${Math.max(0,getDrinkMenu().length-4)}종`);
+
+  lastTs  = null;
+  lastRaf = requestAnimationFrame(loop);
+}
+
+function stopSim() {
+  simRunning = false;
+  if (lastRaf) cancelAnimationFrame(lastRaf);
+  document.getElementById("startBtn").style.display   = "block";
+  document.getElementById("startBtn").disabled        = false;
+  document.getElementById("startBtn").textContent     = "▶ 시뮬레이션 시작";
+  document.getElementById("stopBtn").style.display    = "none";
+  document.getElementById("statusDot").classList.add("idle");
+  document.getElementById("statusText").textContent   = "정지됨";
+  drawCafe(); drawPersonas();
+}
+
+function setSpeed(v) {
+  simSpeed = parseFloat(v);
+  document.getElementById("speedVal").textContent = v + "×";
+}
+
+async function loadDistricts() {
+  try {
+    const res  = await fetch("/districts");
+    const data = await res.json();
+    const sel  = document.getElementById("districtSelect");
+    (data.districts || []).forEach(d => {
+      const o = document.createElement("option");
+      o.value = d; o.textContent = d;
+      sel.appendChild(o);
+    });
+    sel.onchange = () => {
+      document.getElementById("startBtn").disabled = !sel.value;
+    };
+  } catch(e) { console.error("Districts load failed", e); }
+}
+
+// Real-time clock
+setInterval(() => {
+  document.getElementById("clock").textContent =
+    new Date().toLocaleTimeString("ko-KR", { hour:"2-digit", minute:"2-digit", second:"2-digit" });
+}, 1000);
+
+// ── Init ──
+buildBgCache();
+drawCafe();
+loadDistricts();
+// ═══════════════════════════════════════════════════════════════
+//  COMFORT & SAFETY EVENT ENGINE
+// ═══════════════════════════════════════════════════════════════
+
+// Config (mirrored from cafe_flow.py)
+const COMFORT_CHECK_INTERVAL = 30.0;
+const SAFETY_CHECK_INTERVAL  = 60.0;
+const COMFORT_EVENT_PROB     = 0.15;
+const SAFETY_EVENT_PROB      = 0.05;
+
+const COMFORT_EVENTS = [
+  { id:"too_hot",  message:"너무 더워요, 에어컨 좀 낮춰주세요 🥵",
+    action:{type:"temperature", value:-2}, bubble:"🥵 너무 더워요!" },
+  { id:"too_cold", message:"너무 추워요, 에어컨 좀 올려주세요 🥶",
+    action:{type:"temperature", value:+2}, bubble:"🥶 너무 추워요!" },
+  { id:"stuffy",   message:"환기가 안 되는 것 같아요, 팬 좀 켜주세요 😮‍💨",
+    action:{type:"fan", value:"on"},        bubble:"😮‍💨 답답해요!" },
+];
+
+const SAFETY_EVENTS = [
+  { id:"suspicious_person", detection_type:"suspicious_behavior",
+    confidence:0.82, severity:"medium",
+    evidence:"Customer reported feeling unsafe near another patron",
+    bubble:"😨 무서워요!" },
+  { id:"harassment", detection_type:"harassment",
+    confidence:0.91, severity:"high",
+    evidence:"Customer reported harassment",
+    bubble:"🚨 도움이 필요해요!" },
+];
+
+// Per-persona timers  { personaId → { comfortTimer, safetyTimer } }
+const personaEventTimers = {};
+
+// Active alert overlay  { message, color, timer }
+let activeAlert = null;
+
+// Current simulated room temperature (updated by comfort events)
+let simRoomTemp = 24.0;
+
+// ── Timer tick (called from main loop with dtSec) ──────────────
+function tickComfortSafety(dtSec) {
+  for (const p of personas) {
+    if (!personaEventTimers[p.id]) {
+      personaEventTimers[p.id] = {
+        comfortTimer: COMFORT_CHECK_INTERVAL * (0.5 + Math.random()),
+        safetyTimer:  SAFETY_CHECK_INTERVAL  * (0.5 + Math.random()),
+      };
+    }
+    const t = personaEventTimers[p.id];
+
+    // Comfort check — only while sitting or waiting
+    if (p.currentStage?.id === "sitting" || p.currentStage?.id === "waiting") {
+      t.comfortTimer -= dtSec * simSpeed;
+      if (t.comfortTimer <= 0) {
+        t.comfortTimer = COMFORT_CHECK_INTERVAL;
+        if (Math.random() < COMFORT_EVENT_PROB) {
+          const ev = COMFORT_EVENTS[Math.floor(Math.random() * COMFORT_EVENTS.length)];
+          triggerComfortEvent(p, ev);
+        }
+      }
+    }
+
+    // Safety check — anywhere, anytime
+    t.safetyTimer -= dtSec * simSpeed;
+    if (t.safetyTimer <= 0) {
+      t.safetyTimer = SAFETY_CHECK_INTERVAL;
+      if (Math.random() < SAFETY_EVENT_PROB) {
+        const ev = SAFETY_EVENTS[Math.floor(Math.random() * SAFETY_EVENTS.length)];
+        triggerSafetyEvent(p, ev);
+      }
+    }
+  }
+
+  // Clear timers for personas that have left
+  for (const id of Object.keys(personaEventTimers)) {
+    if (!personas.find(p => p.id === id)) delete personaEventTimers[id];
+  }
+}
+
+// ── Comfort trigger ────────────────────────────────────────────
+function triggerComfortEvent(p, ev) {
+  // Show speech bubble on persona
+  p.speechBubble = ev.bubble;
+  p.speechTimer  = 6;
+
+  log(`<span class="warn">[불편]</span> ${p.emoji} ${p.name} — ${ev.bubble}`);
+  showAlert(ev.bubble, "#f59e0b", 5);
+
+  // POST to backend (fire-and-forget)
+  fetch("/persona-comfort", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      persona_name: p.name,
+      persona_age:  p.age,
+      zone_id:      p.assignedSeat || p.currentStage?.zone || "study_zone",
+      event_id:     ev.id,
+      message:      ev.message,
+      action:       ev.action,
+      current_temp: simRoomTemp,
+    }),
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.ok) {
+      // Show bot response as speech bubble
+      if (data.bot_message) {
+        p.speechBubble = "🤖 " + data.bot_message.slice(0, 28);
+        p.speechTimer  = 7;
+      }
+      // Update simulated room temp
+      if (data.ctrl_result?.new_temp) {
+        simRoomTemp = data.ctrl_result.new_temp;
+        log(`<span class="hi">[AC제어]</span> 온도 조정 → ${simRoomTemp.toFixed(1)}°C`);
+        showAlert(`🌡️ 온도 조정됨 → ${simRoomTemp.toFixed(1)}°C`, "#10b981", 4);
+      }
+    }
+  })
+  .catch(e => console.warn("[comfort] fetch failed:", e));
+}
+
+// ── Safety trigger ─────────────────────────────────────────────
+function triggerSafetyEvent(p, ev) {
+  p.speechBubble = ev.bubble;
+  p.speechTimer  = 8;
+
+  const color = ev.severity === "high" ? "#ef4444" : "#f59e0b";
+  log(`<span class="warn">[⚠️안전]</span> ${p.emoji} ${p.name} — ${ev.bubble}`);
+  showAlert(`🚨 안전 이벤트: ${ev.bubble}`, color, 8);
+
+  fetch("/persona-safety", {
+    method:  "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      persona_name:   p.name,
+      persona_age:    p.age,
+      zone_id:        p.assignedSeat || p.currentStage?.zone || "study_zone",
+      event_id:       ev.id,
+      detection_type: ev.detection_type,
+      confidence:     ev.confidence,
+      severity:       ev.severity,
+      evidence:       ev.evidence,
+      current_temp:   simRoomTemp,
+    }),
+  })
+  .then(r => r.json())
+  .then(data => {
+    if (data.bot_message) {
+      p.speechBubble = "🤖 " + data.bot_message.slice(0, 28);
+      p.speechTimer  = 8;
+      log(`<span class="hi">[AI응답]</span> ${data.bot_message.slice(0, 60)}`);
+    }
+  })
+  .catch(e => console.warn("[safety] fetch failed:", e));
+}
+
+// ── Alert overlay ──────────────────────────────────────────────
+function showAlert(message, color, durationSec) {
+  activeAlert = { message, color, timer: durationSec };
+}
+
+function drawAlert() {
+  if (!activeAlert) return;
+  activeAlert.timer -= (1 / 60);   // approximate per-frame decay
+  if (activeAlert.timer <= 0) { activeAlert = null; return; }
+
+  const alpha  = Math.min(1, activeAlert.timer);
+  const W      = canvas.width;
+  const boxH   = 44;
+  const boxY   = canvas.height - boxH - 12;
+
+  // Background pill
+  ctx.globalAlpha = alpha * 0.92;
+  ctx.fillStyle   = activeAlert.color;
+  ctx.beginPath();
+  ctx.roundRect(12, boxY, W - 24, boxH, 12);
+  ctx.fill();
+
+  // Text
+  ctx.globalAlpha  = alpha;
+  ctx.fillStyle    = "#fff";
+  ctx.font         = "bold 13px 'Segoe UI', sans-serif";
+  ctx.textAlign    = "center";
+  ctx.textBaseline = "middle";
+  ctx.fillText(activeAlert.message, W / 2, boxY + boxH / 2);
+  ctx.globalAlpha  = 1;
+}
+
+// ── SSE listener — receives events broadcast from app.py ──────
+(function initSSE() {
+  const es = new EventSource("/stream");
+
+  es.addEventListener("comfort_event", e => {
+    const d = JSON.parse(e.data);
+    log(`<span class="hi">[서버확인]</span> 🌡️ ${d.persona_name} 요청 처리됨 — ${d.bot_message?.slice(0,40) ?? ""}`);
+  });
+
+  es.addEventListener("safety_alert", e => {
+    const d    = JSON.parse(e.data);
+    const color = d.severity === "high" ? "#ef4444" : "#f59e0b";
+    showAlert(`🚨 [${d.zone_id}] ${d.bot_message?.slice(0,40) ?? d.event_id}`, color, 10);
+    log(`<span class="warn">[🚨안전알림]</span> ${d.persona_name} — ${d.severity} / ${d.detection_type}`);
+  });
+
+  es.onerror = () => console.warn("[SSE] 연결 오류, 재시도 중...");
+})();
+
+</script>
+</body>
+</html>

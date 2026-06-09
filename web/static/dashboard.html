@@ -1,0 +1,684 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>📍 상권 인사이트 대시보드</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Segoe UI', 'Noto Sans KR', sans-serif;
+      background: #0f0f1a;
+      color: #e2e2f0;
+      min-height: 100vh;
+    }
+
+    /* ── Top Nav ── */
+    .topnav {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      height: 52px;
+      background: #16162a;
+      border-bottom: 1px solid #2a2a45;
+      display: flex;
+      align-items: center;
+      padding: 0 24px;
+      gap: 16px;
+      z-index: 200;
+    }
+
+    .topnav .logo {
+      font-size: 15px;
+      font-weight: 700;
+      color: #a78bfa;
+      margin-right: 16px;
+    }
+
+    .topnav a {
+      color: #888;
+      text-decoration: none;
+      font-size: 13px;
+      padding: 6px 14px;
+      border-radius: 8px;
+      transition: all 0.2s;
+    }
+
+    .topnav a:hover { background: #1e1e38; color: #fff; }
+    .topnav a.active { background: #6366f1; color: #fff; font-weight: 600; }
+
+    /* ── Layout ── */
+    .layout {
+      display: flex;
+      margin-top: 52px;
+      min-height: calc(100vh - 52px);
+    }
+
+    /* ── Sidebar ── */
+    .sidebar {
+      width: 220px;
+      min-height: 100%;
+      background: #16162a;
+      border-right: 1px solid #2a2a45;
+      padding: 20px 14px;
+      position: fixed;
+      top: 52px;
+      left: 0;
+      bottom: 0;
+      overflow-y: auto;
+    }
+
+    .sidebar h2 {
+      font-size: 11px;
+      color: #555577;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+
+    .district-btn {
+      background: transparent;
+      border: 1px solid #2a2a45;
+      color: #c4c4e0;
+      padding: 10px 14px;
+      border-radius: 8px;
+      text-align: left;
+      cursor: pointer;
+      font-size: 13px;
+      margin-bottom: 6px;
+      transition: all 0.2s;
+      width: 100%;
+    }
+
+    .district-btn:hover  { background: #1e1e38; border-color: #6366f1; color: #fff; }
+    .district-btn.active { background: #6366f1; border-color: #6366f1; color: #fff; font-weight: 700; }
+
+    /* ── Main ── */
+    .main {
+      margin-left: 220px;
+      padding: 28px 24px;
+      flex: 1;
+    }
+
+    /* ── Loading Overlay ── */
+    #loading {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(15,15,26,0.88);
+      z-index: 999;
+      align-items: center;
+      justify-content: center;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    #loading.show { display: flex; }
+
+    .spinner {
+      width: 46px; height: 46px;
+      border: 4px solid #2a2a45;
+      border-top-color: #6366f1;
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Welcome ── */
+    #welcome {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 75vh;
+      gap: 14px;
+      color: #555577;
+    }
+
+    #welcome .icon { font-size: 60px; }
+    #welcome h1 { font-size: 22px; color: #7c7ca0; }
+    #welcome p  { font-size: 13px; }
+
+    /* ── Dashboard ── */
+    #dashboard { display: none; }
+
+    /* ── Profile Header Card ── */
+    .profile-header {
+      background: linear-gradient(135deg, #1e1e38 0%, #16162a 100%);
+      border: 1px solid #2a2a45;
+      border-radius: 14px;
+      padding: 22px 26px;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 14px;
+    }
+
+    .profile-header h1 { font-size: 24px; color: #a78bfa; font-weight: 700; }
+    .profile-header .meta { font-size: 12px; color: #777; margin-top: 4px; }
+
+    .stat-pills { display: flex; gap: 10px; flex-wrap: wrap; }
+
+    .stat-pill {
+      background: #0f0f1a;
+      border: 1px solid #2a2a45;
+      border-radius: 10px;
+      padding: 10px 18px;
+      text-align: center;
+      min-width: 110px;
+    }
+
+    .stat-pill .val { font-size: 20px; font-weight: 700; color: #a78bfa; }
+    .stat-pill .lbl { font-size: 11px; color: #555; margin-top: 2px; }
+
+    /* ── Grids ── */
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    @media (max-width: 1100px) { .grid-3 { grid-template-columns: 1fr 1fr; } }
+    @media (max-width:  720px) { .grid-3, .grid-2 { grid-template-columns: 1fr; } }
+
+    /* ── Card ── */
+    .card {
+      background: #16162a;
+      border: 1px solid #2a2a45;
+      border-radius: 14px;
+      padding: 18px;
+      margin-bottom: 16px;
+    }
+
+    .card h3 {
+      font-size: 12px;
+      color: #a78bfa;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+    }
+
+    /* ── Chart wrapper ── */
+    .chart-wrap { position: relative; height: 210px; }
+
+    /* ── Tags ── */
+    .tag-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
+
+    .peak-tag {
+      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      color: #fff;
+      padding: 7px 18px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .store-tag {
+      background: #1e1e38;
+      border: 1px solid #6366f1;
+      color: #a78bfa;
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 13px;
+    }
+
+    /* ── Insight items ── */
+    .summary-box {
+      background: #1e1e38;
+      border-left: 4px solid #a78bfa;
+      border-radius: 0 8px 8px 0;
+      padding: 12px 16px;
+      font-size: 13px;
+      line-height: 1.7;
+      color: #ccc;
+      margin-bottom: 14px;
+    }
+
+    .insight-item {
+      border-left: 4px solid #ccc;
+      background: #1e1e38;
+      border-radius: 0 8px 8px 0;
+      padding: 10px 14px;
+      margin-bottom: 8px;
+    }
+
+    .insight-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 2px 8px;
+      border-radius: 10px;
+      display: inline-block;
+      margin-bottom: 5px;
+    }
+
+    .insight-item p { font-size: 13px; line-height: 1.6; color: #bbb; }
+
+    /* ── Product Cards ── */
+    .store-fit-box {
+      background: #1e1e38;
+      border-left: 4px solid #10b981;
+      border-radius: 0 8px 8px 0;
+      padding: 12px 16px;
+      font-size: 13px;
+      line-height: 1.7;
+      color: #ccc;
+      margin-bottom: 14px;
+    }
+
+    .products-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      gap: 12px;
+    }
+
+    .product-card {
+      background: #0f0f1a;
+      border-radius: 12px;
+      padding: 14px;
+      border-top: 3px solid #ccc;
+      transition: transform 0.18s, box-shadow 0.18s;
+      cursor: default;
+    }
+
+    .product-card:hover {
+      transform: translateY(-3px);
+      box-shadow: 0 6px 24px rgba(99,102,241,0.15);
+    }
+
+    .p-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+      margin-bottom: 7px;
+    }
+
+    .p-name { font-size: 13px; font-weight: 700; color: #e2e2f0; }
+
+    .demand-badge {
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 9px;
+      border-radius: 10px;
+      white-space: nowrap;
+      color: #fff;
+    }
+
+    .p-meta { font-size: 11px; color: #555; margin-bottom: 7px; }
+    .p-rationale { font-size: 12px; color: #999; line-height: 1.5; }
+
+    /* ── Error toast ── */
+    #toast {
+      display: none;
+      position: fixed;
+      bottom: 24px; right: 24px;
+      background: #ef4444;
+      color: #fff;
+      padding: 12px 20px;
+      border-radius: 10px;
+      font-size: 13px;
+      z-index: 9999;
+      max-width: 340px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- Top Nav -->
+<nav class="topnav">
+  <span class="logo">🏙️ 무인매장 AI</span>
+  <a href="/">🤖 에이전트 흐름</a>
+  <a href="/dashboard">📍 상권 대시보드</a>
+  <a href="/store" class="active">🏪 매장 시뮬레이션</a>
+  <span class="spacer"></span>
+  <span id="clock" style="font-size:12px;color:#555;"></span>
+</nav>
+
+<!-- Loading -->
+<div id="loading">
+  <div class="spinner"></div>
+  <span style="color:#a78bfa;font-size:14px;">인사이트 분석 중...</span>
+</div>
+
+<!-- Error Toast -->
+<div id="toast"></div>
+
+<!-- Layout -->
+<div class="layout">
+
+  <!-- Sidebar -->
+  <nav class="sidebar">
+    <h2>📍 상권 목록</h2>
+    <div id="district-list">
+      <div style="color:#444;font-size:12px;">불러오는 중...</div>
+    </div>
+  </nav>
+
+  <!-- Main -->
+  <main class="main">
+
+    <!-- Welcome -->
+    <div id="welcome">
+      <div class="icon">🏙️</div>
+      <h1>상권 인사이트 대시보드</h1>
+      <p>좌측에서 분석할 상권을 선택하세요</p>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboard">
+
+      <!-- Header -->
+      <div class="profile-header" id="profile-header"></div>
+
+      <!-- Charts -->
+      <div class="grid-3">
+        <div class="card">
+          <h3>📊 연령대 분포</h3>
+          <div class="chart-wrap"><canvas id="ageChart"></canvas></div>
+        </div>
+        <div class="card">
+          <h3>🍩 가구형태</h3>
+          <div class="chart-wrap"><canvas id="familyChart"></canvas></div>
+        </div>
+        <div class="card">
+          <h3>💼 주요 직업</h3>
+          <div class="chart-wrap"><canvas id="occupationChart"></canvas></div>
+        </div>
+      </div>
+
+      <!-- Peak + Store -->
+      <div class="grid-2">
+        <div class="card">
+          <h3>🕐 피크 시간대</h3>
+          <div class="tag-row" id="peak-tags"></div>
+        </div>
+        <div class="card">
+          <h3>🏪 적합 업종</h3>
+          <div class="tag-row" id="store-tags"></div>
+        </div>
+      </div>
+
+      <!-- Insights -->
+      <div class="card">
+        <h3>🧠 인사이트</h3>
+        <div class="summary-box" id="insight-summary"></div>
+        <div id="insight-items"></div>
+      </div>
+
+      <!-- Products -->
+      <div class="card">
+        <h3>📦 상품 추천</h3>
+        <div class="store-fit-box" id="store-fit"></div>
+        <div class="products-grid" id="products-grid"></div>
+      </div>
+
+    </div><!-- /#dashboard -->
+  </main>
+</div>
+
+<script>
+  // ── Palettes ──
+  const PALETTE = ["#6366f1","#8b5cf6","#ec4899","#f59e0b","#10b981","#3b82f6","#f43f5e","#14b8a6"];
+
+  const DEMAND = {
+    high:     { bg: "#ef4444", label: "🔴 HIGH" },
+    moderate: { bg: "#f59e0b", label: "🟡 MODERATE" },
+    steady:   { bg: "#10b981", label: "🟢 STEADY" },
+  };
+
+  const CONF = {
+    high:   { border: "#10b981", badge: "#10b98122", text: "#10b981" },
+    medium: { border: "#f59e0b", badge: "#f59e0b22", text: "#f59e0b" },
+    low:    { border: "#ef4444", badge: "#ef444422", text: "#ef4444" },
+  };
+
+  // ── Chart instances ──
+  const charts = {};
+  function destroyChart(id) {
+    if (charts[id]) { charts[id].destroy(); delete charts[id]; }
+  }
+
+  // ── Toast ──
+  function showToast(msg) {
+    const t = document.getElementById("toast");
+    t.textContent = msg;
+    t.style.display = "block";
+    setTimeout(() => { t.style.display = "none"; }, 4000);
+  }
+
+  // ── Load district list (uses your existing /districts endpoint) ──
+  async function loadDistricts() {
+    try {
+      const res = await axios.get("/districts");
+      const list = document.getElementById("district-list");
+      list.innerHTML = "";
+      res.data.districts.forEach(d => {
+        const btn = document.createElement("button");
+        btn.className = "district-btn";
+        btn.textContent = d;
+        btn.onclick = () => loadInsight(d, btn);
+        list.appendChild(btn);
+      });
+    } catch (e) {
+      document.getElementById("district-list").innerHTML =
+        '<div style="color:#ef4444;font-size:12px;">목록 로드 실패</div>';
+    }
+  }
+
+  // ── Load insight (uses your existing POST /insight endpoint) ──
+  async function loadInsight(district, btn) {
+    document.querySelectorAll(".district-btn").forEach(b => b.classList.remove("active"));
+    if (btn) btn.classList.add("active");
+
+    document.getElementById("loading").classList.add("show");
+
+    try {
+      // POST to your existing /insight endpoint in app.py
+      const res = await axios.post("/insight", { district });
+      const { insight, recommendations } = res.data;
+
+      // We need the profile too — fetch from SAMPLE_PROFILES via a helper
+      // Since /insight now returns district+insight+recommendations,
+      // we add profile info from the insight result itself
+      const profile = res.data.profile || {};
+
+      document.getElementById("welcome").style.display   = "none";
+      document.getElementById("dashboard").style.display = "block";
+
+      renderHeader(district, profile, insight);
+      renderCharts(profile);
+      renderPeakAndStore(insight);
+      renderInsights(insight);
+      renderProducts(recommendations);
+
+    } catch (e) {
+      showToast(`오류: ${e.response?.data?.detail || e.message}`);
+    } finally {
+      document.getElementById("loading").classList.remove("show");
+    }
+  }
+
+  // ── Header ──
+  function renderHeader(district, profile, insight) {
+    const age = profile.age || {};
+    const aptRatio = profile.apartment_ratio != null
+      ? (profile.apartment_ratio * 100).toFixed(0) + "%"
+      : "—";
+
+    document.getElementById("profile-header").innerHTML = `
+      <div>
+        <h1>📍 ${district}</h1>
+        <div class="meta">
+          평균연령 ${age.mean ?? "—"}세 &nbsp;|&nbsp; 아파트 거주 ${aptRatio}
+        </div>
+      </div>
+      <div class="stat-pills">
+        <div class="stat-pill">
+          <div class="val">${profile.sample_size ?? "—"}</div>
+          <div class="lbl">표본 수</div>
+        </div>
+        <div class="stat-pill">
+          <div class="val">${age.mean ?? "—"}</div>
+          <div class="lbl">평균 연령</div>
+        </div>
+        <div class="stat-pill">
+          <div class="val">${aptRatio}</div>
+          <div class="lbl">아파트 거주</div>
+        </div>
+        <div class="stat-pill">
+          <div class="val">${profile.top_occupations?.[0]?.name ?? "—"}</div>
+          <div class="lbl">주요 직업</div>
+        </div>
+      </div>
+    `;
+  }
+
+  // ── Charts ──
+  function renderCharts(profile) {
+    const age   = profile.age?.cohorts   || {};
+    const family = profile.family_types  || {};
+    const occs  = (profile.top_occupations || []).slice(0, 5);
+
+    const chartDefaults = {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+    };
+
+    // Age bar
+    destroyChart("ageChart");
+    charts["ageChart"] = new Chart(document.getElementById("ageChart"), {
+      type: "bar",
+      data: {
+        labels: Object.keys(age),
+        datasets: [{
+          label: "비율 (%)",
+          data: Object.values(age).map(v => (v * 100).toFixed(1)),
+          backgroundColor: PALETTE,
+          borderRadius: 6,
+        }]
+      },
+      options: {
+        ...chartDefaults,
+        scales: {
+          x: { ticks: { color: "#888" }, grid: { color: "#1e1e38" } },
+          y: { ticks: { color: "#888", callback: v => v + "%" }, grid: { color: "#1e1e38" } },
+        }
+      }
+    });
+
+    // Family doughnut
+    destroyChart("familyChart");
+    charts["familyChart"] = new Chart(document.getElementById("familyChart"), {
+      type: "doughnut",
+      data: {
+        labels: Object.keys(family),
+        datasets: [{
+          data: Object.values(family).map(v => (v * 100).toFixed(1)),
+          backgroundColor: PALETTE,
+          borderWidth: 2,
+          borderColor: "#16162a",
+        }]
+      },
+      options: {
+        ...chartDefaults,
+        plugins: {
+          legend: {
+            display: true,
+            position: "bottom",
+            labels: { color: "#777", font: { size: 10 }, boxWidth: 10, padding: 6 },
+          }
+        }
+      }
+    });
+
+    // Occupation horizontal bar
+    destroyChart("occupationChart");
+    charts["occupationChart"] = new Chart(document.getElementById("occupationChart"), {
+      type: "bar",
+      data: {
+        labels: occs.map(o => o.name),
+        datasets: [{
+          label: "비율 (%)",
+          data: occs.map(o => ((o.ratio || 0) * 100).toFixed(1)),
+          backgroundColor: "#6366f1",
+          borderRadius: 6,
+        }]
+      },
+      options: {
+        ...chartDefaults,
+        indexAxis: "y",
+        scales: {
+          x: { ticks: { color: "#888", callback: v => v + "%" }, grid: { color: "#1e1e38" } },
+          y: { ticks: { color: "#ccc", font: { size: 11 } }, grid: { display: false } },
+        }
+      }
+    });
+  }
+
+  // ── Peak Hours & Store Types ──
+  function renderPeakAndStore(insight) {
+    document.getElementById("peak-tags").innerHTML =
+      (insight?.peak_hours || [])
+        .map(h => `<span class="peak-tag">⏰ ${h}</span>`).join("");
+
+    document.getElementById("store-tags").innerHTML =
+      (insight?.recommended_store_types || [])
+        .map(s => `<span class="store-tag">🏪 ${s}</span>`).join("");
+  }
+
+  // ── Insights ──
+  function renderInsights(insight) {
+    document.getElementById("insight-summary").textContent = insight?.summary || "—";
+
+    document.getElementById("insight-items").innerHTML =
+      (insight?.insights || []).map(ins => {
+        const c = CONF[ins.confidence] || CONF.medium;
+        return `
+          <div class="insight-item" style="border-left-color:${c.border};">
+            <span class="insight-badge" style="background:${c.badge};color:${c.text};">
+              ${ins.category} · ${ins.confidence}
+            </span>
+            <p>${ins.insight}</p>
+          </div>`;
+      }).join("");
+  }
+
+  // ── Products ──
+  function renderProducts(recommendations) {
+    document.getElementById("store-fit").textContent =
+      recommendations?.store_type_fit || "—";
+
+    document.getElementById("products-grid").innerHTML =
+      (recommendations?.products || []).map(p => {
+        const d = DEMAND[p.demand] || { bg: "#6366f1", label: p.demand };
+        return `
+          <div class="product-card" style="border-top-color:${d.bg};">
+            <div class="p-header">
+              <span class="p-name">${p.name}</span>
+              <span class="demand-badge" style="background:${d.bg};">${d.label}</span>
+            </div>
+            <div class="p-meta">🕐 ${p.peak_window} &nbsp;|&nbsp; 📈 ${p.stock_adjustment}</div>
+            <div class="p-rationale">${p.rationale}</div>
+          </div>`;
+      }).join("");
+  }
+
+  // ── Init ──
+  loadDistricts();
+</script>
+</body>
+</html>

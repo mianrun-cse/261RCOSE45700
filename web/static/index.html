@@ -40,7 +40,33 @@
       display: flex;
       flex-direction: column;
     }
+    .topnav {
+      height: 48px;
+      background: #16162a;
+      border-bottom: 1px solid #2a2a45;
+      display: flex;
+      align-items: center;
+      padding: 0 20px;
+      gap: 14px;
+      flex-shrink: 0;
+      z-index: 100;
+    }
 
+    .topnav .logo { font-size: 14px; font-weight: 700; color: #a78bfa; margin-right: 12px; }
+
+    .topnav a {
+      color: #888;
+      text-decoration: none;
+      font-size: 12px;
+      padding: 5px 12px;
+      border-radius: 6px;
+      transition: all 0.2s;
+    }
+
+    .topnav a:hover  { background: #1e1e38; color: #fff; }
+    .topnav a.active { background: #6366f1; color: #fff; font-weight: 600; }
+
+    .topnav .spacer { flex: 1; }
     /* ── HEADER ── */
     header {
       display: flex;
@@ -1007,6 +1033,15 @@
 </head>
 
 <body>
+
+  <nav class="topnav">
+    <span class="logo">🏙️ 무인매장 AI</span>
+    <a href="/">🤖 에이전트 흐름</a>
+    <a href="/dashboard">📍 상권 대시보드</a>
+    <a href="/store" class="active">🏪 매장 시뮬레이션</a>
+    <span class="spacer"></span>
+    <span id="clock" style="font-size:12px;color:#555;"></span>
+  </nav>
 
   <!-- HEADER -->
   <header>
