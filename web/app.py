@@ -417,8 +417,8 @@ class ComfortRequest(BaseModel):
     zone_id:      str
     event_id:     str           # "too_hot" | "too_cold" | "stuffy"
     message:      str
-    action:       dict          # {"type": "temperature"|"fan", "value": ...}
     current_temp: float = 24.0
+    # action is no longer sent from frontend — AI decides via full graph
 
 
 @app.post("/persona-comfort")
@@ -426,16 +426,12 @@ async def persona_comfort(req: ComfortRequest):
     """
     store.html 시뮬레이션의 페르소나가 불쾌감을 느낄 때 호출.
 
-    흐름:
-      1) customer_node → LLM 응답 (bot_response)
-      2) temperature_controller.handle() → 실제 온도 제어
-      3) broadcast("comfort_event") → store.html 실시간 반영
+    흐름: facility_graph 전체 실행 (customer → reconcile → actuator)
+    AI가 메시지를 보고 온도 조정 여부와 delta를 직접 결정한다.
     """
     from llm_module.state import make_customer_state
-    from llm_module.agents.customer_agent import customer_node
-    from llm_module.actuators.temperature_controller import handle as temp_handle
+    from llm_module.graph import facility_graph
 
-    # 1) customer_node 실행
     state = make_customer_state(
         zone_id=req.zone_id,
         all_zone_ids=ZONE_IDS,
@@ -449,31 +445,30 @@ async def persona_comfort(req: ComfortRequest):
         },
         tts_enabled=False,
     )
-    result = await customer_node(state)
-    bot_response = result.get("bot_response", {})
+
+    result = await facility_graph.ainvoke(state)
+
+    bot_response = result.get("bot_response") or {}
     bot_message  = bot_response.get("message", "")
 
-    # 2) 온도/팬 제어 실행
+    # Extract AI-decided temperature change from pending_actions
+    # Action format: {"kind":"temperature", "target_temp_delta": float, ...}
     ctrl_result = {"executed": False, "new_temp": req.current_temp}
 
-    action = req.action
-    if action.get("type") == "temperature":
-        delta    = float(action.get("value", -1))
-        new_temp = max(18.0, min(30.0, req.current_temp + delta))
-        await temp_handle(
-            zone_id=req.zone_id,
-            temperature=req.current_temp,
-            humidity=0,
-            reason=f"고객 요청 ({req.persona_name}): {req.message[:40]}",
-            target_temp_delta=delta,
-        )
-        ctrl_result = {"executed": True, "new_temp": new_temp, "type": "temperature"}
+    for act in result.get("pending_actions", []):
+        kind = act.get("kind", "")
+        if kind in ("temperature", "temperature_all"):
+            delta    = float(act.get("target_temp_delta", 0))
+            new_temp = round(max(18.0, min(30.0, req.current_temp + delta)), 1)
+            ctrl_result = {
+                "executed": True,
+                "new_temp": new_temp,
+                "delta":    delta,
+                "type":     kind,
+            }
+            break
 
-    elif action.get("type") == "fan":
-        print(f"[{req.zone_id}][팬제어] {req.persona_name} 요청 → 팬 {action.get('value')}")
-        ctrl_result = {"executed": True, "type": "fan", "value": action.get("value")}
-
-    # 3) broadcast → store.html
+    # broadcast → store.html real-time update
     await broadcast("comfort_event", {
         "persona_name": req.persona_name,
         "persona_age":  req.persona_age,
@@ -481,7 +476,6 @@ async def persona_comfort(req: ComfortRequest):
         "event_id":     req.event_id,
         "message":      req.message,
         "bot_message":  bot_message,
-        "action":       req.action,
         "ctrl_result":  ctrl_result,
     })
 

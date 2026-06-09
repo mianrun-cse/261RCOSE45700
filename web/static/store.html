@@ -5,28 +5,46 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
   <title>☕ 무인카페 시뮬레이션</title>
   <style>
+    /* ═══════════════════════════════════════════════════
+       UNIFIED DESIGN SYSTEM — matches index.html exactly
+    ═══════════════════════════════════════════════════ */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    :root {
+      --bg:       #0d0d0d;
+      --surface:  #141414;
+      --surface2: #1c1c1c;
+      --border:   #2a2a2a;
+      --accent:   #e8ff47;
+      --accent2:  #47c8ff;
+      --danger:   #ff4747;
+      --warning:  #ffaa47;
+      --ok:       #47ff8f;
+      --text:     #f0f0f0;
+      --muted:    #555;
+      --font:     'Inter', system-ui, sans-serif;
+      --radius:   10px;
+    }
+
     body {
-      background: #1a1a2e;
-      color: #e2e2f0;
-      font-family: 'Segoe UI', 'Noto Sans KR', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font);
+      font-size: 14px;
       display: flex;
       flex-direction: column;
       height: 100vh;
       overflow: hidden;
     }
 
+    /* ── TOP NAV ── */
     .topnav {
       height: 48px;
       background: #16162a;
       border-bottom: 1px solid #2a2a45;
-      display: flex;
-      align-items: center;
-      padding: 0 20px;
-      gap: 14px;
-      flex-shrink: 0;
-      z-index: 100;
+      display: flex; align-items: center;
+      padding: 0 20px; gap: 14px;
+      flex-shrink: 0; z-index: 100;
     }
     .topnav .logo { font-size: 14px; font-weight: 700; color: #a78bfa; margin-right: 12px; }
     .topnav a {
@@ -37,123 +55,357 @@
     .topnav a.active { background: #6366f1; color: #fff; font-weight: 600; }
     .topnav .spacer  { flex: 1; }
 
+    /* ── STATUS BAR ── */
     .statusbar {
       display: flex; align-items: center; gap: 12px;
-      padding: 0 16px; height: 34px;
-      background: #12121f; border-bottom: 1px solid #2a2a45;
+      padding: 0 20px; height: 34px;
+      background: var(--surface); border-bottom: 1px solid var(--border);
       flex-shrink: 0; font-size: 12px;
     }
     .status-dot {
       width: 8px; height: 8px; border-radius: 50%;
-      background: #10b981; animation: pulse 1.5s infinite;
+      background: var(--ok); animation: pulse 1.5s infinite;
     }
-    .status-dot.idle { background: #555; animation: none; }
-    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    .status-dot.idle { background: var(--muted); animation: none; }
+    .statusbar .spacer { flex: 1; }
+    .agent-chip {
+      font-size: 10px; color: var(--muted);
+      padding: 2px 10px; background: var(--surface2);
+      border: 1px solid var(--border); border-radius: 999px;
+    }
+    .agent-chip.active { color: var(--accent); border-color: var(--accent); }
 
+    /* ── GRAPH FLOW BAR — same as index.html ── */
+    .graph-bar {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 20px;
+      display: flex; align-items: center; gap: 8px;
+      overflow-x: auto; flex-shrink: 0;
+    }
+    .graph-bar::-webkit-scrollbar { height: 3px; }
+    .graph-bar::-webkit-scrollbar-thumb { background: var(--border); }
+
+    .g-node {
+      background: var(--surface2); border: 2px solid var(--border);
+      border-radius: 8px; padding: 6px 12px; text-align: center;
+      min-width: 100px; transition: all 0.3s ease; flex-shrink: 0;
+    }
+    .g-node .g-ttl { font-size: 10px; font-weight: 600; }
+    .g-node .g-sub { font-size: 9px; color: var(--muted); margin-top: 1px; }
+    .g-node.dim { opacity: 0.35; }
+    .g-node.passed { border-color: var(--ok); background: rgba(71,255,143,0.07); }
+    .g-node.passed .g-ttl { color: var(--ok); }
+    .g-node.active {
+      border-color: var(--accent); background: var(--accent);
+      color: #000; transform: scale(1.06);
+      box-shadow: 0 0 18px rgba(232,255,71,0.5);
+      animation: nodeGlow 1.4s ease-in-out infinite;
+    }
+    .g-node.active .g-sub { color: rgba(0,0,0,0.6); }
+    .g-terminal {
+      background: transparent; border: 2px dashed var(--border);
+      color: var(--muted); padding: 6px 10px; border-radius: 999px;
+      font-size: 10px; text-align: center; flex-shrink: 0;
+      min-width: 50px; transition: all 0.3s;
+    }
+    .g-terminal.active { border-color: var(--ok); color: var(--ok); box-shadow: 0 0 12px rgba(71,255,143,0.4); }
+    .g-terminal.passed { border-color: var(--ok); color: var(--ok); opacity: 0.6; }
+    .g-arrow { color: var(--warning); font-size: 12px; font-weight: bold; flex-shrink: 0; }
+    .g-branch { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
+
+    @keyframes nodeGlow {
+      0%,100% { box-shadow: 0 0 18px rgba(232,255,71,0.5); }
+      50%      { box-shadow: 0 0 32px rgba(232,255,71,0.9); }
+    }
+
+    /* ── MAIN LAYOUT ── */
     .layout { display: flex; flex: 1; overflow: hidden; }
 
     .canvas-wrap {
       flex: 1; display: flex; align-items: center; justify-content: center;
-      background: #13131f; overflow: hidden; position: relative;
+      background: #0a0a14; overflow: hidden; position: relative;
     }
     canvas#store { image-rendering: pixelated; }
 
-    .panel {
-      width: 270px; background: #16162a;
-      border-left: 1px solid #2a2a45;
+    /* ── AGENT TOAST OVERLAY (on canvas) ── */
+    .agent-overlay {
+      position: absolute; bottom: 16px; left: 16px;
+      pointer-events: none;
+      display: flex; flex-direction: column; gap: 6px;
+      max-width: 340px; z-index: 10;
+    }
+    .agent-toast {
+      background: rgba(20,20,20,0.96);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--accent);
+      border-radius: 8px; padding: 8px 14px;
+      font-size: 11px; color: var(--text);
+      animation: slideIn 0.3s ease;
+      display: flex; align-items: flex-start; gap: 8px;
+    }
+    .agent-toast.danger { border-left-color: var(--danger); }
+    .agent-toast.ok     { border-left-color: var(--ok); }
+    .agent-toast.warn   { border-left-color: var(--warning); }
+    .toast-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+    .toast-body { flex: 1; }
+    .toast-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 2px; }
+    .toast-msg   { font-size: 11px; line-height: 1.4; }
+
+    /* ── LEFT PANEL (personas + log) ── */
+    .panel-left {
+      width: 260px; background: var(--bg);
+      border-right: 1px solid var(--border);
       display: flex; flex-direction: column; flex-shrink: 0;
     }
-    .panel-section { border-bottom: 1px solid #2a2a45; padding: 14px; }
-    .panel-section h3 {
-      font-size: 11px; color: #555577;
+
+    /* ── RIGHT PANEL (settings + temp + stats) ── */
+    .panel {
+      width: 260px; background: var(--bg);
+      border-left: 1px solid var(--border);
+      display: flex; flex-direction: column; flex-shrink: 0;
+    }
+    .panel-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 16px; border-bottom: 1px solid var(--border);
+      background: var(--surface); flex-shrink: 0;
+    }
+    .panel-title {
+      font-size: 11px; font-weight: 600;
+      letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted);
+      display: flex; align-items: center; gap: 6px;
+    }
+    .badge {
+      font-size: 10px; padding: 2px 8px; border-radius: 999px;
+      background: var(--surface2); border: 1px solid var(--border); color: var(--muted);
+    }
+    .badge.live { color: var(--accent); border-color: var(--accent); }
+
+    /* ── EXPORT BUTTON ── */
+    .export-btn {
+      font-size: 10px; font-weight: 700; letter-spacing: 0.05em;
+      padding: 3px 10px; border-radius: 6px;
+      border: 1px solid var(--border); background: var(--surface2);
+      color: var(--muted); cursor: pointer; transition: all 0.15s;
+      font-family: var(--font); text-transform: uppercase;
+    }
+    .export-btn:hover { background: var(--accent); color: #000; border-color: var(--accent); }
+    .export-btn.done  { color: var(--ok); border-color: var(--ok); background: rgba(71,255,143,0.08); }
+
+    /* ── SIM SETTINGS ── */
+    .panel-section { border-bottom: 1px solid var(--border); padding: 12px 16px; flex-shrink: 0; }
+    .section-label {
+      font-size: 10px; color: var(--muted);
       text-transform: uppercase; letter-spacing: 1px; margin-bottom: 10px;
     }
-
     select {
-      width: 100%; background: #0f0f1a; border: 1px solid #2a2a45;
-      color: #e2e2f0; padding: 8px 10px; border-radius: 8px;
-      font-size: 13px; margin-bottom: 8px; cursor: pointer;
+      width: 100%; background: var(--surface2); border: 1px solid var(--border);
+      color: var(--text); padding: 8px 10px; border-radius: 8px;
+      font-size: 12px; margin-bottom: 8px; cursor: pointer; font-family: var(--font);
     }
-
     .btn {
-      width: 100%; padding: 9px; border: none; border-radius: 8px;
-      cursor: pointer; font-size: 13px; font-weight: 600; transition: all 0.2s;
+      width: 100%; padding: 8px; border-radius: 8px;
+      cursor: pointer; font-size: 11px; font-weight: 700; transition: all 0.15s;
+      letter-spacing: 0.05em; text-transform: uppercase;
+      border: 1px solid var(--border); font-family: var(--font);
     }
-    .btn-primary { background: #6366f1; color: #fff; }
-    .btn-primary:hover:not(:disabled) { background: #4f46e5; }
-    .btn-primary:disabled { background: #2a2a45; color: #555; cursor: not-allowed; }
-    .btn-danger  { background: #ef4444; color: #fff; margin-top: 6px; }
-    .btn-danger:hover { background: #dc2626; }
+    .btn-primary { background: var(--surface2); color: var(--text); }
+    .btn-primary:hover:not(:disabled) { background: var(--accent); color: #000; border-color: var(--accent); }
+    .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-danger { background: var(--surface2); color: var(--danger); border-color: var(--danger); margin-top: 6px; }
+    .btn-danger:hover { background: var(--danger); color: #000; }
 
     .speed-row { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
-    .speed-row label { font-size: 12px; color: #888; flex: 1; }
-    input[type=range] { flex: 2; accent-color: #6366f1; }
-    .speed-val { font-size: 12px; color: #a78bfa; width: 28px; text-align: right; }
+    .speed-row label { font-size: 11px; color: var(--muted); flex: 1; }
+    input[type=range] { flex: 2; accent-color: var(--accent); }
+    .speed-val { font-size: 12px; color: var(--accent); width: 28px; text-align: right; font-weight: 700; }
 
+    /* ── PERSONA LIST ── */
     .persona-list { flex: 1; overflow-y: auto; padding: 10px; min-height: 0; }
+    .persona-list::-webkit-scrollbar { width: 3px; }
+    .persona-list::-webkit-scrollbar-thumb { background: var(--border); }
     .persona-item {
       display: flex; align-items: center; gap: 8px;
       padding: 7px 10px; border-radius: 8px; margin-bottom: 5px;
-      background: #1e1e38; font-size: 12px;
+      background: var(--surface); border: 1px solid var(--border);
+      font-size: 12px; transition: border-color 0.2s;
     }
+    .persona-item:hover { border-color: #3a3a3a; }
     .persona-avatar-sm {
       width: 28px; height: 28px; border-radius: 50%;
       display: flex; align-items: center; justify-content: center;
       font-size: 15px; flex-shrink: 0;
     }
     .persona-info { flex: 1; min-width: 0; }
-    .persona-name { font-weight: 600; color: #ccc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .persona-action { font-size: 11px; color: #666; margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .persona-name { font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .persona-action { font-size: 11px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+    /* ── EVENT + AGENT LOG ── */
     .log-area {
-      height: 150px; overflow-y: auto; padding: 8px 12px;
-      font-size: 11px; line-height: 1.7;
+      flex: 1; overflow-y: auto; padding: 8px 12px;
+      font-size: 11px; line-height: 1.7; min-height: 0;
+      font-family: 'Cascadia Code', Consolas, monospace;
+      background: #080808;
     }
-    .log-entry { margin-bottom: 2px; color: #666; }
-    .log-entry .ts   { color: #3a3a5a; margin-right: 4px; }
-    .log-entry .ev   { color: #a78bfa; }
-    .log-entry .hi   { color: #10b981; }
-    .log-entry .warn { color: #f59e0b; }
+    .log-area::-webkit-scrollbar { width: 3px; }
+    .log-area::-webkit-scrollbar-thumb { background: var(--border); }
+    .log-entry { margin-bottom: 1px; color: var(--muted); }
+    .log-entry .ts     { color: #333; margin-right: 4px; }
+    .log-entry .ev     { color: var(--accent2); }
+    .log-entry .hi     { color: var(--ok); }
+    .log-entry .warn   { color: var(--warning); }
+    .log-entry .danger { color: var(--danger); }
+    .log-entry .agent  { color: var(--accent); font-weight: 600; }
 
+    /* ── TEMPERATURE WIDGET ── */
+    .temp-widget {
+      padding: 12px 16px; border-bottom: 1px solid var(--border);
+      flex-shrink: 0; background: var(--surface); transition: background 0.5s;
+    }
+    .temp-widget.flash { animation: tempFlash 0.8s ease; }
+    @keyframes tempFlash {
+      0%   { background: var(--surface); }
+      30%  { background: rgba(232,255,71,0.12); }
+      100% { background: var(--surface); }
+    }
+    .temp-row {
+      display: flex; align-items: center; justify-content: space-between;
+      margin-bottom: 8px;
+    }
+    .temp-label { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; }
+    .temp-value {
+      font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums;
+      line-height: 1; transition: color 0.5s;
+    }
+    .temp-zone  { font-size: 10px; color: var(--muted); margin-top: 2px; }
+    .temp-delta {
+      font-size: 11px; font-weight: 700; padding: 2px 8px;
+      border-radius: 999px; opacity: 0; transition: opacity 0.3s;
+    }
+    .temp-delta.show { opacity: 1; animation: deltaFade 3s forwards; }
+    @keyframes deltaFade { 0%{opacity:1} 70%{opacity:1} 100%{opacity:0} }
+    .temp-bar-wrap {
+      height: 4px; background: var(--border); border-radius: 2px; overflow: hidden;
+    }
+    .temp-bar {
+      height: 100%; border-radius: 2px; transition: width 0.6s ease, background 0.5s;
+    }
+    .temp-status {
+      font-size: 10px; color: var(--muted); margin-top: 5px; text-align: right;
+    }
+
+    /* ── STATS ROW ── */
     .stats-row {
       display: flex; gap: 6px; padding: 10px 12px;
-      border-top: 1px solid #2a2a45; flex-shrink: 0;
+      border-top: 1px solid var(--border); flex-shrink: 0;
+      background: var(--surface);
     }
     .stat-mini {
-      flex: 1; background: #0f0f1a; border-radius: 8px;
-      padding: 7px 4px; text-align: center;
+      flex: 1; background: var(--bg); border: 1px solid var(--border);
+      border-radius: 8px; padding: 7px 4px; text-align: center;
     }
-    .stat-mini .v { font-size: 17px; font-weight: 700; color: #a78bfa; }
-    .stat-mini .l { font-size: 10px; color: #444; margin-top: 1px; }
+    .stat-mini .v { font-size: 17px; font-weight: 700; color: var(--accent); }
+    .stat-mini .l { font-size: 10px; color: var(--muted); margin-top: 1px; }
+
+    /* ── ANIMATIONS ── */
+    @keyframes pulse   { 0%,100%{opacity:1} 50%{opacity:0.3} }
+    @keyframes slideIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+    * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
   </style>
 </head>
 <body>
 
+<!-- TOP NAV -->
 <nav class="topnav">
-  <span class="logo">☕ 무인카페 AI</span>
+  <span class="logo">🏙️ 무인매장 AI</span>
   <a href="/">🤖 에이전트 흐름</a>
   <a href="/dashboard">📍 상권 대시보드</a>
   <a href="/store" class="active">☕ 카페 시뮬레이션</a>
   <span class="spacer"></span>
-  <span id="clock" style="font-size:12px;color:#555;"></span>
+  <span id="clock" style="font-size:12px;color:var(--muted);"></span>
 </nav>
 
+<!-- STATUS BAR -->
 <div class="statusbar">
   <div class="status-dot idle" id="statusDot"></div>
-  <span id="statusText" style="color:#555;">대기 중 — 상권을 선택하고 시뮬레이션을 시작하세요</span>
+  <span id="statusText" style="color:var(--muted);">대기 중 — 상권을 선택하고 시뮬레이션을 시작하세요</span>
+  <span class="spacer"></span>
+  <span class="agent-chip" id="agentChip">Agent: Idle</span>
 </div>
 
+<!-- GRAPH FLOW BAR — live agent pipeline visualization -->
+<div class="graph-bar">
+  <div class="g-terminal" id="gnode-start">START</div>
+  <span class="g-arrow">→</span>
+  <div class="g-node dim" id="gnode-orchestrator_dispatch">
+    <div class="g-ttl">Orchestrator</div>
+    <div class="g-sub">dispatch · route</div>
+  </div>
+  <span class="g-arrow">→</span>
+  <div class="g-branch">
+    <div class="g-node dim" id="gnode-safety">
+      <div class="g-ttl">Safety Agent</div>
+      <div class="g-sub">safety_agent</div>
+    </div>
+    <div class="g-node dim" id="gnode-customer">
+      <div class="g-ttl">Customer Bot</div>
+      <div class="g-sub">customer_agent</div>
+    </div>
+  </div>
+  <span class="g-arrow">→</span>
+  <div class="g-node dim" id="gnode-orchestrator_reconcile">
+    <div class="g-ttl">Orchestrator</div>
+    <div class="g-sub">reconcile · decide</div>
+  </div>
+  <span class="g-arrow">→</span>
+  <div class="g-node dim" id="gnode-actuator">
+    <div class="g-ttl">Actuator</div>
+    <div class="g-sub">execute · effects</div>
+  </div>
+  <span class="g-arrow">→</span>
+  <div class="g-terminal" id="gnode-end">END</div>
+</div>
+
+<!-- MAIN LAYOUT -->
 <div class="layout">
+
+  <!-- LEFT PANEL: persona list + log -->
+  <aside class="panel-left">
+
+    <!-- Persona list -->
+    <div class="panel-header">
+      <div class="panel-title"><span>🧍</span> 현재 카페 내 인원</div>
+      <span class="badge live" id="personaBadge">0명</span>
+    </div>
+    <div class="persona-list" id="personaList">
+      <div style="color:var(--muted);font-size:12px;text-align:center;margin-top:20px;">
+        시뮬레이션 시작 후 표시됩니다
+      </div>
+    </div>
+
+    <!-- Event + agent log with export -->
+    <div class="panel-header">
+      <div class="panel-title"><span>⚡</span> 이벤트 / 에이전트 로그</div>
+      <button class="export-btn" id="exportBtn" onclick="exportLog()">⬇ 내보내기</button>
+    </div>
+    <div class="log-area" id="logArea"></div>
+
+  </aside>
+
+  <!-- CANVAS SIMULATION -->
   <div class="canvas-wrap" id="canvasWrap">
     <canvas id="store"></canvas>
+    <!-- Agent response toasts overlaid on canvas -->
+    <div class="agent-overlay" id="agentOverlay"></div>
   </div>
 
+  <!-- RIGHT PANEL: settings + temp + stats -->
   <aside class="panel">
+
+    <!-- Settings -->
     <div class="panel-section">
-      <h3>⚙️ 시뮬레이션 설정</h3>
-      <select id="districtSelect">
-        <option value="">상권 선택...</option>
-      </select>
+      <div class="section-label">⚙️ 시뮬레이션 설정</div>
+      <select id="districtSelect"><option value="">상권 선택...</option></select>
       <button class="btn btn-primary" id="startBtn" disabled onclick="startSim()">
         ▶ 시뮬레이션 시작
       </button>
@@ -168,32 +420,38 @@
       </div>
     </div>
 
-    <div class="panel-section" style="flex:1;display:flex;flex-direction:column;min-height:0;overflow:hidden;">
-      <h3>🧍 현재 카페 내 인원</h3>
-      <div class="persona-list" id="personaList">
-        <div style="color:#444;font-size:12px;text-align:center;margin-top:20px;">
-          시뮬레이션 시작 후 표시됩니다
+    <!-- Temperature widget -->
+    <div class="temp-widget" id="tempWidget">
+      <div class="temp-row">
+        <div>
+          <div class="temp-label">🌡️ 실내 온도</div>
+          <div class="temp-zone" id="tempZone">전체 구역</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="temp-value" id="tempValue" style="color:var(--ok)">24.0°C</div>
+          <div class="temp-delta" id="tempDelta"></div>
         </div>
       </div>
+      <div class="temp-bar-wrap">
+        <div class="temp-bar" id="tempBar" style="width:40%;background:var(--ok)"></div>
+      </div>
+      <div class="temp-status" id="tempStatus">쾌적</div>
     </div>
 
-    <div class="panel-section" style="padding:10px 14px 4px;">
-      <h3>📋 이벤트 로그</h3>
-    </div>
-    <div class="log-area" id="logArea"></div>
-
+    <!-- Stats -->
     <div class="stats-row">
       <div class="stat-mini"><div class="v" id="sTotal">0</div><div class="l">총방문</div></div>
       <div class="stat-mini"><div class="v" id="sActive">0</div><div class="l">현재</div></div>
       <div class="stat-mini"><div class="v" id="sOrders">0</div><div class="l">주문</div></div>
       <div class="stat-mini"><div class="v" id="sAvgAge">—</div><div class="l">평균연령</div></div>
     </div>
+
   </aside>
 </div>
 
 <script>
 // ═══════════════════════════════════════════════════════════════
-//  roundRect POLYFILL  ← fixes black canvas on most browsers
+//  roundRect POLYFILL
 // ═══════════════════════════════════════════════════════════════
 if (!CanvasRenderingContext2D.prototype.roundRect) {
   CanvasRenderingContext2D.prototype.roundRect = function(x, y, w, h, r) {
@@ -208,6 +466,10 @@ if (!CanvasRenderingContext2D.prototype.roundRect) {
     return this;
   };
 }
+
+// ═══════════════════════════════════════════════════════════════
+//  SIMULATION STATE
+// ═══════════════════════════════════════════════════════════════
 let personas        = [];
 let simRunning      = false;
 let simSpeed        = 1;
@@ -220,14 +482,12 @@ let totalOrders     = 0;
 let districtProfile = null;
 let nameIdx         = 0;
 let bgCache         = null;
+let simRoomTemp     = 24.0;
 
 // ═══════════════════════════════════════════════════════════════
-//  CANVAS & TILE CONSTANTS
+//  CANVAS SETUP
 // ═══════════════════════════════════════════════════════════════
-const TILE = 52;
-const COLS = 20;
-const ROWS = 15;
-
+const TILE = 52, COLS = 20, ROWS = 15;
 const canvas = document.getElementById("store");
 const ctx    = canvas.getContext("2d");
 const wrap   = document.getElementById("canvasWrap");
@@ -257,10 +517,10 @@ const ZONES = [
   { id:"dessert",     label:"디저트",        col:4,  row:6,  w:2,  h:3,  color:"#3a2a1e", icon:"🍰",  type:"service" },
   { id:"window_seat", label:"창가석",        col:7,  row:0,  w:11, h:3,  color:"#1a2535", icon:"🪟",  type:"seat"    },
   { id:"study_zone",  label:"공부존",        col:7,  row:4,  w:5,  h:4,  color:"#1a1a30", icon:"💻",  type:"seat"    },
-  { id:"table_2a",    label:"2인석",         col:13, row:4,  w:3,  h:2,  color:"#1e1e2a", icon:"🪑",  type:"seat"    },
-  { id:"table_2b",    label:"2인석",         col:13, row:7,  w:3,  h:2,  color:"#1e1e2a", icon:"🪑",  type:"seat"    },
-  { id:"table_2c",    label:"2인석",         col:17, row:4,  w:3,  h:2,  color:"#1e1e2a", icon:"🪑",  type:"seat"    },
-  { id:"table_2d",    label:"2인석",         col:17, row:7,  w:3,  h:2,  color:"#1e1e2a", icon:"🪑",  type:"seat"    },
+  { id:"table_2a",    label:"2인석 A",       col:13, row:4,  w:3,  h:2,  color:"#1e1e2a", icon:"🪑",  type:"seat"    },
+  { id:"table_2b",    label:"2인석 B",       col:13, row:7,  w:3,  h:2,  color:"#1e1e2a", icon:"🪑",  type:"seat"    },
+  { id:"table_2c",    label:"2인석 C",       col:17, row:4,  w:3,  h:2,  color:"#1e1e2a", icon:"🪑",  type:"seat"    },
+  { id:"table_2d",    label:"2인석 D",       col:17, row:7,  w:3,  h:2,  color:"#1e1e2a", icon:"🪑",  type:"seat"    },
   { id:"sofa_lounge", label:"소파 라운지",   col:7,  row:9,  w:9,  h:4,  color:"#2a1e38", icon:"🛋️",  type:"seat"    },
   { id:"group_table", label:"단체석",        col:17, row:9,  w:3,  h:4,  color:"#1e2a1e", icon:"👥",  type:"seat"    },
   { id:"trash",       label:"쓰레기/반납",   col:6,  row:12, w:2,  h:2,  color:"#2a2a1e", icon:"🗑️",  type:"util"    },
@@ -274,13 +534,13 @@ const SEAT_ZONES = [
 ];
 
 function getZone(id) { return ZONES.find(z => z.id === id); }
-
 function zoneCenterTile(id) {
   const z = getZone(id);
   if (!z) return { x: 10, y: 7 };
-  const ox = (Math.random() - 0.5) * Math.max(0.5, z.w - 1.5);
-  const oy = (Math.random() - 0.5) * Math.max(0.5, z.h - 1.5);
-  return { x: z.col + z.w / 2 + ox, y: z.row + z.h / 2 + oy };
+  return {
+    x: z.col + z.w / 2 + (Math.random() - 0.5) * Math.max(0.5, z.w - 1.5),
+    y: z.row + z.h / 2 + (Math.random() - 0.5) * Math.max(0.5, z.h - 1.5),
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -291,7 +551,6 @@ const COLORS = [
   "#10b981","#3b82f6","#f43f5e","#14b8a6",
   "#a78bfa","#fbbf24","#34d399","#60a5fa",
 ];
-
 const NAMES = [
   "김민준","이서연","박지호","최수아","정하늘","윤도현",
   "강나은","임재원","한소희","오민서","신태양","류아린",
@@ -299,7 +558,6 @@ const NAMES = [
   "엄기현","방소율","안철수","이영희","박민호","김수진",
   "서준호","최지아","윤성재","박하은","이준서","김나영",
 ];
-
 const EMOJI_POOLS = {
   teen:   ["🐱","🐰","🦊","🐹"],
   twenty: ["🐶","🦝","🐼","🐨"],
@@ -308,7 +566,6 @@ const EMOJI_POOLS = {
   fifty:  ["🐘","🦔","🐃","🦉"],
   sixty:  ["🦋","🐢","🦦","🐓"],
 };
-
 function pickEmojiPool(age) {
   if (age < 20) return EMOJI_POOLS.teen;
   if (age < 30) return EMOJI_POOLS.twenty;
@@ -318,16 +575,13 @@ function pickEmojiPool(age) {
   return EMOJI_POOLS.sixty;
 }
 
-// ═══════════════════════════════════════════════════════════════
-//  STATE
-// ═══════════════════════════════════════════════════════════════
 const seatOccupancy = {};
 SEAT_ZONES.forEach(id => { seatOccupancy[id] = null; });
+
 // ═══════════════════════════════════════════════════════════════
-//  FLOW CONFIG  (from /cafe-flow API)
+//  FLOW CONFIG (from /cafe-flow)
 // ═══════════════════════════════════════════════════════════════
 let FLOW_CONFIG = null;
-
 function getFlowStages()   { return FLOW_CONFIG?.flow_stages      || []; }
 function getDrinkMenu()    { return FLOW_CONFIG?.drink_menu       || ["아메리카노","라떼"]; }
 function getDessertMenu()  { return FLOW_CONFIG?.dessert_menu     || ["크로와상","머핀"]; }
@@ -338,13 +592,190 @@ function getSeatPrefs()    { return FLOW_CONFIG?.seat_preferences ?? {}; }
 
 async function loadCafeFlow(district) {
   const res = await fetch("/cafe-flow", {
-    method:  "POST",
-    headers: { "Content-Type": "application/json" },
-    body:    JSON.stringify({ district }),
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ district }),
   });
   if (!res.ok) throw new Error(`cafe-flow API error: ${res.status}`);
   FLOW_CONFIG = await res.json();
-  console.log("[CafeFlow] loaded:", FLOW_CONFIG);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  GRAPH NODE CONTROL — mirrors index.html
+// ═══════════════════════════════════════════════════════════════
+const GRAPH_NODE_IDS = [
+  "orchestrator_dispatch","safety","customer","orchestrator_reconcile","actuator"
+];
+
+function resetGraph() {
+  GRAPH_NODE_IDS.forEach(id => {
+    const el = document.getElementById("gnode-" + id);
+    if (el) { el.classList.remove("active","passed"); el.classList.add("dim"); }
+  });
+  document.getElementById("gnode-start").classList.remove("active","passed");
+  document.getElementById("gnode-end").classList.remove("active","passed");
+  setAgentChip("Agent: Idle", false);
+}
+
+function activateNode(nodeId) {
+  GRAPH_NODE_IDS.forEach(id => {
+    const el = document.getElementById("gnode-" + id);
+    if (el && el.classList.contains("active")) {
+      el.classList.remove("active"); el.classList.add("passed");
+    }
+  });
+  const el = document.getElementById("gnode-" + nodeId);
+  if (!el) return;
+  el.classList.remove("dim"); el.classList.add("active");
+  const labels = {
+    orchestrator_dispatch:  "Routing…",
+    safety:                 "Safety Agent 🔍",
+    customer:               "Customer Bot 💬",
+    orchestrator_reconcile: "Reconciling…",
+    actuator:               "Executing ⚡",
+  };
+  setAgentChip(labels[nodeId] || nodeId, true);
+}
+
+function finishGraph() {
+  GRAPH_NODE_IDS.forEach(id => {
+    const el = document.getElementById("gnode-" + id);
+    if (el && el.classList.contains("active")) {
+      el.classList.remove("active"); el.classList.add("passed");
+    }
+  });
+  document.getElementById("gnode-end").classList.add("active");
+  setAgentChip("Done ✓", false);
+  setTimeout(() => {
+    document.getElementById("gnode-end").classList.remove("active");
+    document.getElementById("gnode-end").classList.add("passed");
+    setTimeout(resetGraph, 1500);
+  }, 2000);
+}
+
+function setAgentChip(text, active) {
+  const el = document.getElementById("agentChip");
+  el.textContent = text;
+  el.classList.toggle("active", active);
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  SSE — listen to agent pipeline from /stream
+// ═══════════════════════════════════════════════════════════════
+(function initSSE() {
+  const es = new EventSource("/stream");
+
+  es.addEventListener("start", e => {
+    try {
+      const d = JSON.parse(e.data);
+      resetGraph();
+      document.getElementById("gnode-start").classList.add("active");
+      log(`<span class="agent">[에이전트 시작]</span> ${d.name || "Graph run"}`);
+    } catch(_) {}
+  });
+
+  es.addEventListener("log", e => {
+    try {
+      const d = JSON.parse(e.data);
+      if (d.node) {
+        document.getElementById("gnode-start").classList.remove("active");
+        document.getElementById("gnode-start").classList.add("passed");
+        activateNode(d.node);
+      }
+    } catch(_) {}
+  });
+
+  es.addEventListener("done", e => {
+    try {
+      const d = JSON.parse(e.data);
+      finishGraph();
+      if (d.state) handleAgentDone(d.state);
+    } catch(_) {}
+  });
+
+  // Server-confirmed comfort event — sync temperature widget
+  es.addEventListener("comfort_event", e => {
+    try {
+      const d    = JSON.parse(e.data);
+      const ctrl = d.ctrl_result;
+      if (ctrl?.executed && ctrl.new_temp != null && ctrl.new_temp !== simRoomTemp) {
+        updateTempWidget(ctrl.new_temp, d.zone_id, ctrl.delta);
+      }
+      log(`<span class="hi">[서버확인]</span> 🌡️ ${d.persona_name} — ${(d.bot_message||"").slice(0,40)}`);
+    } catch(_) {}
+  });
+
+  // Server-confirmed safety alert
+  es.addEventListener("safety_alert", e => {
+    try {
+      const d      = JSON.parse(e.data);
+      const cls    = d.severity === "high" ? "danger" : "warn";
+      const color  = d.severity === "high" ? "var(--danger)" : "var(--warning)";
+      const zn     = getZone(d.zone_id);
+      const zLabel = zn ? zn.label : (d.zone_id || "?");
+      log(`<span class="danger">[🚨안전알림]</span> <span style="color:${color};font-weight:700">[${zLabel}]</span> ${d.persona_name} — ${d.severity} / ${d.detection_type}`);
+      showCanvasToast(`🚨 [${zLabel}] ${(d.bot_message||d.event_id||"").slice(0,40)}`, cls, 10);
+      if (d.zone_id) highlightSafetyZone(d.zone_id, d.severity, 12000);
+    } catch(_) {}
+  });
+
+  es.onerror = () => console.warn("[SSE] 연결 오류, 재시도 중...");
+})();
+
+// Handle completed agent run → update sim state and show response
+function handleAgentDone(state) {
+  if (!state) return;
+  const t = state.trigger_type || "";
+
+  if (t === "customer") {
+    const resp = state.response || state.ai_response || state.bot_message;
+    if (resp) {
+      showCanvasToast(`🤖 ${resp.slice(0, 60)}`, "ok", 8);
+      log(`<span class="agent">[AI응답]</span> ${resp.slice(0, 60)}`);
+      const zone = state.zone_id;
+      if (zone) {
+        const p = personas.find(p => p.assignedSeat === zone || p.currentStage?.zone === zone);
+        if (p) { p.speechBubble = "🤖 " + resp.slice(0, 28); p.speechTimer = 7; }
+      }
+    }
+    if (state.ctrl_result?.new_temp) {
+      simRoomTemp = state.ctrl_result.new_temp;
+      log(`<span class="hi">[AC제어]</span> 온도 조정 → ${simRoomTemp.toFixed(1)}°C`);
+      showCanvasToast(`🌡️ 온도 조정됨 → ${simRoomTemp.toFixed(1)}°C`, "ok", 4);
+    }
+  }
+
+  if (t === "safety") {
+    const sev    = (state.severity || state.analysis_result?.severity || "").toLowerCase();
+    const cls    = ["high","critical"].includes(sev) ? "danger" : "warn";
+    const zn     = state.zone_id ? getZone(state.zone_id) : null;
+    const zLabel = zn ? zn.label : (state.zone_id || "");
+    const zInfo  = zLabel ? ` [${zLabel}]` : "";
+    if (state.zone_id) highlightSafetyZone(state.zone_id, sev, 10000);
+    showCanvasToast(`🚨${zInfo} 안전 처리 완료 — 심각도: ${sev || "unknown"}`, cls, 8);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  CANVAS TOAST OVERLAY
+// ═══════════════════════════════════════════════════════════════
+function showCanvasToast(message, type = "ok", durationSec = 6) {
+  const overlay = document.getElementById("agentOverlay");
+  const toast   = document.createElement("div");
+  toast.className = `agent-toast ${type}`;
+  const icons = { ok:"⚡", danger:"🚨", warn:"⚠️", info:"💬" };
+  toast.innerHTML = `
+    <div class="toast-icon">${icons[type] || "🤖"}</div>
+    <div class="toast-body">
+      <div class="toast-label">AI 에이전트 응답</div>
+      <div class="toast-msg">${message}</div>
+    </div>`;
+  overlay.appendChild(toast);
+  while (overlay.children.length > 3) overlay.removeChild(overlay.firstChild);
+  setTimeout(() => {
+    toast.style.transition = "opacity 0.4s";
+    toast.style.opacity    = "0";
+    setTimeout(() => toast.remove(), 400);
+  }, durationSec * 1000);
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -367,14 +798,13 @@ function timePeriod() {
 
 function weightedPick(weights) {
   const entries = Object.entries(weights);
-  const total   = entries.reduce((s, [, w]) => s + w, 0);
+  const total   = entries.reduce((s,[,w]) => s + w, 0);
   let   r       = Math.random() * total;
-  for (const [id, w] of entries) {
-    r -= w;
-    if (r <= 0) return id;
-  }
+  for (const [id, w] of entries) { r -= w; if (r <= 0) return id; }
   return entries[0][0];
 }
+
+const _logStore = [];
 
 function log(html) {
   const area = document.getElementById("logArea");
@@ -382,13 +812,43 @@ function log(html) {
   d.className = "log-entry";
   d.innerHTML = `<span class="ts">${fmtTime(simTime)}</span>${html}`;
   area.prepend(d);
-  while (area.children.length > 100) area.removeChild(area.lastChild);
+  while (area.children.length > 120) area.removeChild(area.lastChild);
+  // Store plain-text version for export
+  const plain = d.textContent || d.innerText || "";
+  _logStore.unshift({ time: fmtTime(simTime), text: plain.replace(/^\s+|\s+$/g, "") });
+  if (_logStore.length > 500) _logStore.pop();
+}
+
+function exportLog() {
+  if (_logStore.length === 0) return;
+  const lines = _logStore.map(e => `[${e.time}] ${e.text}`).join("\n");
+  const blob  = new Blob([lines], { type: "text/plain;charset=utf-8" });
+  const url   = URL.createObjectURL(blob);
+  const a     = document.createElement("a");
+  const now   = new Date();
+  const stamp = `${now.getFullYear()}${String(now.getMonth()+1).padStart(2,"0")}${String(now.getDate()).padStart(2,"0")}_${String(now.getHours()).padStart(2,"0")}${String(now.getMinutes()).padStart(2,"0")}`;
+  a.href     = url;
+  a.download = `agent_log_${stamp}.txt`;
+  a.click();
+  URL.revokeObjectURL(url);
+  // Brief visual feedback on button
+  const btn = document.getElementById("exportBtn");
+  const orig = btn.textContent;
+  btn.textContent = "✓ 내보냄";
+  btn.style.color = "var(--ok)";
+  btn.style.borderColor = "var(--ok)";
+  setTimeout(() => {
+    btn.textContent = orig;
+    btn.style.color = "";
+    btn.style.borderColor = "";
+  }, 1800);
 }
 
 function updateStats() {
-  document.getElementById("sTotal").textContent  = totalVisits;
-  document.getElementById("sActive").textContent = personas.length;
-  document.getElementById("sOrders").textContent = totalOrders;
+  document.getElementById("sTotal").textContent   = totalVisits;
+  document.getElementById("sActive").textContent  = personas.length;
+  document.getElementById("sOrders").textContent  = totalOrders;
+  document.getElementById("personaBadge").textContent = personas.length + "명";
   if (personas.length > 0) {
     const avg = Math.round(personas.reduce((s, p) => s + p.age, 0) / personas.length);
     document.getElementById("sAvgAge").textContent = avg;
@@ -400,7 +860,7 @@ function updateStats() {
 function updatePersonaList() {
   const el = document.getElementById("personaList");
   if (!personas.length) {
-    el.innerHTML = '<div style="color:#444;font-size:12px;text-align:center;margin-top:16px;">현재 카페 내 인원 없음</div>';
+    el.innerHTML = '<div style="color:var(--muted);font-size:12px;text-align:center;margin-top:16px;">현재 카페 내 인원 없음</div>';
     return;
   }
   el.innerHTML = personas.map(p => `
@@ -427,22 +887,15 @@ function pickPersonaType() {
   if (!types.length) return null;
   const total = types.reduce((s, t) => s + (t.weight || 1), 0);
   let r = Math.random() * total;
-  for (const t of types) {
-    r -= t.weight || 1;
-    if (r <= 0) return t;
-  }
+  for (const t of types) { r -= t.weight || 1; if (r <= 0) return t; }
   return types[0];
 }
 
 function pickSeatFromConfig(age) {
-  const prefs  = getSeatPrefs();
-  const group  = age < 30 ? "under_30"
-               : age < 40 ? "30s"
-               : age < 50 ? "40s"
-               : "50plus";
+  const prefs   = getSeatPrefs();
+  const group   = age < 30 ? "under_30" : age < 40 ? "30s" : age < 50 ? "40s" : "50plus";
   const weights = prefs[group] || {};
-  if (!Object.keys(weights).length)
-    return SEAT_ZONES[Math.floor(Math.random() * SEAT_ZONES.length)];
+  if (!Object.keys(weights).length) return SEAT_ZONES[Math.floor(Math.random() * SEAT_ZONES.length)];
   return weightedPick(weights);
 }
 
@@ -457,37 +910,26 @@ function spawnPersona() {
   const ageMin = ptype?.age_range?.[0] ?? 19;
   const ageMax = ptype?.age_range?.[1] ?? 65;
   const age    = Math.floor(ageMin + Math.random() * (ageMax - ageMin));
-
-  const pool  = ptype?.emoji_pool?.length ? ptype.emoji_pool : pickEmojiPool(age);
-  const emoji = pool[Math.floor(Math.random() * pool.length)];
-  const color = COLORS[Math.floor(Math.random() * COLORS.length)];
-  const name  = NAMES[nameIdx++ % NAMES.length];
-
+  const pool   = ptype?.emoji_pool?.length ? ptype.emoji_pool : pickEmojiPool(age);
+  const emoji  = pool[Math.floor(Math.random() * pool.length)];
+  const color  = COLORS[Math.floor(Math.random() * COLORS.length)];
+  const name   = NAMES[nameIdx++ % NAMES.length];
   const drinks   = getDrinkMenu();
   const desserts = getDessertMenu();
   const drink    = drinks[Math.floor(Math.random() * drinks.length)];
-  const dessert  = Math.random() < 0.3
-    ? desserts[Math.floor(Math.random() * desserts.length)]
-    : null;
-
-  const myFlow = buildPersonalFlow();
+  const dessert  = Math.random() < 0.3 ? desserts[Math.floor(Math.random() * desserts.length)] : null;
+  const myFlow   = buildPersonalFlow();
 
   const p = {
     id: Math.random().toString(36).slice(2),
     name, age, emoji, color, drink, dessert,
     personaType:         ptype?.label ?? "방문객",
     preferredActivities: ptype?.preferred_activities ?? [],
-    x: 10 + (Math.random() - 0.5) * 2,
-    y: 14, tx: 10, ty: 14,
-    flowQueue:     myFlow,
-    currentStage:  null,
-    state:         "walking",
-    stateTimer:    0,
-    actionLabel:   null,
-    speechBubble:  null,
-    speechTimer:   0,
-    preferredSeat: pickSeatFromConfig(age),
-    assignedSeat:  null,
+    x: 10 + (Math.random() - 0.5) * 2, y: 14, tx: 10, ty: 14,
+    flowQueue: myFlow, currentStage: null,
+    state: "walking", stateTimer: 0,
+    actionLabel: null, speechBubble: null, speechTimer: 0,
+    preferredSeat: pickSeatFromConfig(age), assignedSeat: null,
   };
 
   const first = p.flowQueue.shift();
@@ -530,13 +972,11 @@ function arriveAtStage(p) {
     updateStats();
     log(`<span class="ev">[주문]</span> ${p.emoji} ${p.name} — ${p.drink}${p.dessert ? " + "+p.dessert : ""}`);
   }
-
   if (stage.id === "pickup") {
     p.speechBubble = `${p.drink} ☕`;
     p.speechTimer  = 3;
     log(`<span class="hi">[픽업]</span> ${p.emoji} ${p.name} 음료 픽업`);
   }
-
   if (stage.id === "sitting") {
     let seat = p.preferredSeat;
     if (seatOccupancy[seat]) {
@@ -547,12 +987,10 @@ function arriveAtStage(p) {
     p.assignedSeat = seat;
     log(`<span class="hi">[착석]</span> ${p.emoji} ${p.name} → ${getZone(seat)?.label || seat}`);
   }
-
   if (stage.id === "trash" && p.assignedSeat) {
     seatOccupancy[p.assignedSeat] = null;
     p.assignedSeat = null;
   }
-
   if (stage.id === "exit") { startLeaving(p); return; }
 
   const [lo, hi] = stage.duration_range ?? [5, 15];
@@ -564,23 +1002,15 @@ function arriveAtStage(p) {
 function advanceToNextStage(p) {
   const next = p.flowQueue.shift();
   if (!next) { startLeaving(p); return; }
-  p.currentStage = next;
-  p.state        = "walking";
-  p.actionLabel  = null;
-  const dest     = getStageTarget(next, p);
+  p.currentStage = next; p.state = "walking"; p.actionLabel = null;
+  const dest = getStageTarget(next, p);
   p.tx = dest.x; p.ty = dest.y;
 }
 
 function startLeaving(p) {
-  p.state        = "leaving";
-  p.currentStage = null;
-  p.actionLabel  = "🚶 퇴장 중";
-  p.tx           = 10 + (Math.random() - 0.5) * 2;
-  p.ty           = 16;
-  if (p.assignedSeat) {
-    seatOccupancy[p.assignedSeat] = null;
-    p.assignedSeat = null;
-  }
+  p.state = "leaving"; p.currentStage = null; p.actionLabel = "🚶 퇴장 중";
+  p.tx = 10 + (Math.random() - 0.5) * 2; p.ty = 16;
+  if (p.assignedSeat) { seatOccupancy[p.assignedSeat] = null; p.assignedSeat = null; }
   log(`<span class="ev">[퇴장]</span> ${p.emoji} ${p.name} 퇴장`);
 }
 
@@ -591,22 +1021,13 @@ function updatePersonas(dtSec) {
   const speed = 3.0 * simSpeed;
   for (let i = personas.length - 1; i >= 0; i--) {
     const p = personas[i];
-
-    if (p.speechTimer > 0) {
-      p.speechTimer -= dtSec;
-      if (p.speechTimer <= 0) p.speechBubble = null;
-    }
+    if (p.speechTimer > 0) { p.speechTimer -= dtSec; if (p.speechTimer <= 0) p.speechBubble = null; }
 
     if (p.state === "walking") {
       const dx = p.tx - p.x, dy = p.ty - p.y;
       const dist = Math.sqrt(dx*dx + dy*dy);
-      if (dist < 0.12) {
-        p.x = p.tx; p.y = p.ty;
-        arriveAtStage(p);
-      } else {
-        p.x += (dx/dist) * speed * dtSec;
-        p.y += (dy/dist) * speed * dtSec;
-      }
+      if (dist < 0.12) { p.x = p.tx; p.y = p.ty; arriveAtStage(p); }
+      else { p.x += (dx/dist)*speed*dtSec; p.y += (dy/dist)*speed*dtSec; }
     } else if (p.state === "acting") {
       p.stateTimer -= dtSec;
       if (p.stateTimer <= 0) advanceToNextStage(p);
@@ -615,12 +1036,8 @@ function updatePersonas(dtSec) {
       const dist = Math.sqrt(dx*dx + dy*dy);
       if (dist < 0.2 || p.y > ROWS + 1) {
         if (p.assignedSeat) seatOccupancy[p.assignedSeat] = null;
-        personas.splice(i, 1);
-        updateStats();
-      } else {
-        p.x += (dx/dist) * speed * dtSec;
-        p.y += (dy/dist) * speed * dtSec;
-      }
+        personas.splice(i, 1); updateStats();
+      } else { p.x += (dx/dist)*speed*dtSec; p.y += (dy/dist)*speed*dtSec; }
     }
   }
 }
@@ -633,11 +1050,7 @@ function buildBgCache() {
   oc.width = canvas.width; oc.height = canvas.height;
   const ox = oc.getContext("2d");
 
-  // Floor
-  ox.fillStyle = "#1c1a28";
-  ox.fillRect(0, 0, oc.width, oc.height);
-
-  // Grid lines
+  ox.fillStyle = "#1c1a28"; ox.fillRect(0, 0, oc.width, oc.height);
   ox.strokeStyle = "#22203a"; ox.lineWidth = 0.5;
   for (let c = 0; c <= COLS; c++) {
     ox.beginPath(); ox.moveTo(c*TILE, 0); ox.lineTo(c*TILE, ROWS*TILE); ox.stroke();
@@ -646,20 +1059,16 @@ function buildBgCache() {
     ox.beginPath(); ox.moveTo(0, r*TILE); ox.lineTo(COLS*TILE, r*TILE); ox.stroke();
   }
 
-  // Zones
   ZONES.forEach(z => {
     if (z.type === "floor") return;
     const x = z.col*TILE, y = z.row*TILE, w = z.w*TILE, h = z.h*TILE;
-
     ox.fillStyle = z.color;
     ox.beginPath(); ox.roundRect(x+2, y+2, w-4, h-4, 10); ox.fill();
-
     const border = {
       service:"#6366f1", seat:"#2a2a55",
-      util:"#3a3a2a", entrance:"#2a5a2a", wall:"#1e3a5a"
+      util:"#3a3a2a", entrance:"#2a5a2a", wall:"#1e3a5a",
     }[z.type] || "#3a3a5a";
-    ox.strokeStyle = border;
-    ox.lineWidth   = z.type === "service" ? 2 : 1;
+    ox.strokeStyle = border; ox.lineWidth = z.type === "service" ? 2 : 1;
     ox.beginPath(); ox.roundRect(x+2, y+2, w-4, h-4, 10); ox.stroke();
 
     if (z.icon) {
@@ -669,18 +1078,21 @@ function buildBgCache() {
       ox.fillText(z.icon, x+w/2, y+h/2 - (z.label ? 8 : 0));
     }
     if (z.label) {
-      ox.font      = `bold ${Math.min(TILE*0.21, 11)}px 'Segoe UI', sans-serif`;
-      ox.fillStyle = "rgba(200,200,240,0.7)";
+      ox.font = `bold ${Math.min(TILE*0.24, 12)}px 'Inter', sans-serif`;
+      ox.fillStyle = z.type === "seat" ? "rgba(220,230,255,0.88)" : "rgba(200,200,240,0.65)";
       ox.textAlign = "center"; ox.textBaseline = "middle";
       ox.fillText(z.label, x+w/2, y+h/2 + (z.icon ? 14 : 0));
     }
+    // Seat zones: add a small corner zone-ID chip for quick identification
+    if (z.type === "seat") {
+      const chipW = 6, chipH = 6;
+      ox.fillStyle = "rgba(99,102,241,0.55)";
+      ox.beginPath(); ox.roundRect(x+5, y+5, chipW, chipH, 2); ox.fill();
+    }
   });
 
-  // Window plants
   ox.font = "13px serif"; ox.textAlign = "center"; ox.textBaseline = "middle";
-  for (let c = 1; c < COLS; c += 4)
-    ox.fillText("🌿", c*TILE + TILE/2, TILE/2);
-
+  for (let c = 1; c < COLS; c += 4) ox.fillText("🌿", c*TILE + TILE/2, TILE/2);
   bgCache = oc;
 }
 
@@ -691,86 +1103,103 @@ function drawCafe() {
   // Occupied seat tint
   SEAT_ZONES.forEach(sid => {
     if (!seatOccupancy[sid]) return;
-    const z = getZone(sid);
-    if (!z) return;
+    const z = getZone(sid); if (!z) return;
     ctx.fillStyle = "rgba(99,102,241,0.10)";
-    ctx.beginPath();
-    ctx.roundRect(z.col*TILE+2, z.row*TILE+2, z.w*TILE-4, z.h*TILE-4, 10);
-    ctx.fill();
+    ctx.beginPath(); ctx.roundRect(z.col*TILE+2, z.row*TILE+2, z.w*TILE-4, z.h*TILE-4, 10); ctx.fill();
   });
+
+  // Safety zone pulsing highlight
+  if (safetyZoneAlert) {
+    if (Date.now() > safetyZoneAlert.expiry) {
+      safetyZoneAlert = null;
+    } else {
+      const z = getZone(safetyZoneAlert.zoneId);
+      if (z) {
+        const pulse    = (Math.sin(Date.now() / 260) + 1) / 2;   // 0..1
+        const isHigh   = ["high","critical"].includes(safetyZoneAlert.severity);
+        const [r,g,b]  = isHigh ? [255,71,71] : [255,170,71];
+        const zx = z.col*TILE, zy = z.row*TILE, zw = z.w*TILE, zh = z.h*TILE;
+
+        // Pulsing fill
+        ctx.fillStyle = `rgba(${r},${g},${b},${0.08 + pulse * 0.20})`;
+        ctx.beginPath(); ctx.roundRect(zx+2, zy+2, zw-4, zh-4, 10); ctx.fill();
+
+        // Pulsing glow border
+        ctx.save();
+        ctx.shadowBlur  = 14 * pulse;
+        ctx.shadowColor = `rgb(${r},${g},${b})`;
+        ctx.strokeStyle = `rgba(${r},${g},${b},${0.50 + pulse * 0.50})`;
+        ctx.lineWidth   = 2.5;
+        ctx.beginPath(); ctx.roundRect(zx+1, zy+1, zw-2, zh-2, 11); ctx.stroke();
+        ctx.restore();
+
+        // Zone name badge pinned to top-center of zone
+        const badge = "⚠️ " + z.label;
+        ctx.font = "bold 10px 'Inter', sans-serif";
+        const bw  = ctx.measureText(badge).width + 14;
+        const bx  = zx + zw/2 - bw/2;
+        const by  = zy + 5;
+        ctx.globalAlpha = 0.82 + pulse * 0.18;
+        ctx.fillStyle   = isHigh ? "#ff4747" : "#ffaa47";
+        ctx.beginPath(); ctx.roundRect(bx, by, bw, 17, 5); ctx.fill();
+        ctx.fillStyle   = "#000";
+        ctx.textAlign   = "center"; ctx.textBaseline = "middle";
+        ctx.fillText(badge, zx + zw/2, by + 8.5);
+        ctx.globalAlpha = 1;
+      }
+    }
+  }
 }
 
 function drawPersonas() {
   personas.forEach(p => {
-    const px = p.x * TILE;
-    const py = p.y * TILE;
-    const r  = 16;
+    const px = p.x * TILE, py = p.y * TILE, r = 16;
 
-    // Shadow
     ctx.fillStyle = "rgba(0,0,0,0.25)";
-    ctx.beginPath();
-    ctx.ellipse(px, py+18, r, 5, 0, 0, Math.PI*2);
-    ctx.fill();
+    ctx.beginPath(); ctx.ellipse(px, py+18, r, 5, 0, 0, Math.PI*2); ctx.fill();
 
-    // Glow when sitting
     if (p.state === "acting" && p.currentStage?.id === "sitting") {
       ctx.shadowBlur = 10; ctx.shadowColor = p.color;
     }
-
-    // Color ring
     ctx.fillStyle = p.color;
     ctx.beginPath(); ctx.arc(px, py, r+2, 0, Math.PI*2); ctx.fill();
     ctx.shadowBlur = 0;
-
-    // White inner
     ctx.fillStyle = "#fff";
     ctx.beginPath(); ctx.arc(px, py, r-1, 0, Math.PI*2); ctx.fill();
-
-    // Emoji
     ctx.font = "18px serif";
     ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(p.emoji, px, py);
 
-    // Action bubble
     if (p.actionLabel) {
-      ctx.font = "bold 10px 'Segoe UI', sans-serif";
+      ctx.font = "bold 10px 'Inter', sans-serif";
       const tw = ctx.measureText(p.actionLabel).width + 16;
       const bx = px - tw/2, by = py - 40, bh = 18;
-
-      ctx.fillStyle = "rgba(20,20,50,0.92)";
-      ctx.beginPath();
-      ctx.moveTo(px-5, by+bh); ctx.lineTo(px, by+bh+6); ctx.lineTo(px+5, by+bh);
-      ctx.closePath(); ctx.fill();
-
-      ctx.fillStyle = "rgba(20,20,50,0.92)";
+      ctx.fillStyle = "rgba(13,13,13,0.92)";
+      ctx.beginPath(); ctx.moveTo(px-5,by+bh); ctx.lineTo(px,by+bh+6); ctx.lineTo(px+5,by+bh); ctx.closePath(); ctx.fill();
+      ctx.fillStyle = "rgba(13,13,13,0.92)";
       ctx.beginPath(); ctx.roundRect(bx, by, tw, bh, 5); ctx.fill();
       ctx.strokeStyle = p.color + "88"; ctx.lineWidth = 1;
       ctx.beginPath(); ctx.roundRect(bx, by, tw, bh, 5); ctx.stroke();
-
-      ctx.fillStyle = "#e2e2f0";
+      ctx.fillStyle = "#f0f0f0";
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText(p.actionLabel, px, by+bh/2);
     }
 
-    // Speech bubble
     if (p.speechBubble) {
-      ctx.font = "bold 11px 'Segoe UI', sans-serif";
+      ctx.font = "bold 11px 'Inter', sans-serif";
       const tw = ctx.measureText(p.speechBubble).width + 18;
       const bx = px - tw/2, by = py - 64, bh = 20;
-
       ctx.fillStyle = "#fff";
       ctx.beginPath(); ctx.roundRect(bx, by, tw, bh, 8); ctx.fill();
       ctx.strokeStyle = p.color; ctx.lineWidth = 1.5;
       ctx.beginPath(); ctx.roundRect(bx, by, tw, bh, 8); ctx.stroke();
-
-      ctx.fillStyle = "#1a1a2e";
+      ctx.fillStyle = "#0d0d0d";
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillText(p.speechBubble, px, by+bh/2);
     }
 
-    // Name tag
-    ctx.font = "bold 9px 'Segoe UI', sans-serif";
-    ctx.fillStyle = "#e2e2f0";
+    ctx.font = "bold 9px 'Inter', sans-serif";
+    ctx.fillStyle = "#f0f0f0";
     ctx.textAlign = "center"; ctx.textBaseline = "top";
     const shortName = p.name.length > 5 ? p.name.slice(0,4)+"…" : p.name;
     ctx.fillText(shortName, px, py+r+3);
@@ -779,26 +1208,387 @@ function drawPersonas() {
 
 function drawHUD() {
   const period   = timePeriod();
-  const pColor   = { morning:"#f59e0b", afternoon:"#10b981", evening:"#6366f1" }[period];
-  const periodKr = { morning:"오전",    afternoon:"오후",     evening:"저녁"    }[period];
+  const pColor   = { morning:"#ffaa47", afternoon:"#47ff8f", evening:"#6366f1" }[period];
+  const periodKr = { morning:"오전", afternoon:"오후", evening:"저녁" }[period];
 
-  ctx.fillStyle = "rgba(12,12,28,0.85)";
-  ctx.beginPath(); ctx.roundRect(8, 8, 130, 36, 8); ctx.fill();
-
-  ctx.font = "bold 15px 'Segoe UI', monospace";
-  ctx.fillStyle = "#a78bfa"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillStyle = "rgba(13,13,13,0.90)";
+  ctx.beginPath(); ctx.roundRect(8, 8, 150, 36, 8); ctx.fill();
+  ctx.font = "bold 15px 'Inter', monospace";
+  ctx.fillStyle = "#e8ff47"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
   ctx.fillText("🕐 " + fmtTime(simTime), 16, 26);
+  ctx.font = "bold 11px 'Inter', sans-serif"; ctx.fillStyle = pColor;
+  ctx.fillText(periodKr, 124, 26);
 
-  ctx.font = "bold 11px 'Segoe UI', sans-serif";
-  ctx.fillStyle = pColor;
-  ctx.fillText(periodKr, 112, 26);
+  ctx.fillStyle = "rgba(13,13,13,0.90)";
+  ctx.beginPath(); ctx.roundRect(8, 50, 150, 26, 8); ctx.fill();
+  ctx.font = "11px 'Inter', sans-serif"; ctx.fillStyle = "#888";
+  ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillText(`👥 ${personas.length}명  🌡️ ${simRoomTemp.toFixed(1)}°C`, 16, 63);
 
-  ctx.fillStyle = "rgba(12,12,28,0.85)";
-  ctx.beginPath(); ctx.roundRect(8, 50, 130, 26, 8); ctx.fill();
+  // Zone alert HUD badge
+  if (safetyZoneAlert && Date.now() < safetyZoneAlert.expiry) {
+    const zn      = getZone(safetyZoneAlert.zoneId);
+    const zLabel  = zn ? zn.label : safetyZoneAlert.zoneId;
+    const isHigh  = ["high","critical"].includes(safetyZoneAlert.severity);
+    const pulse   = (Math.sin(Date.now() / 380) + 1) / 2;
+    const badgeText = `🚨 경보 구역: ${zLabel}`;
+    ctx.font = "bold 11px 'Inter', sans-serif";
+    const bw = ctx.measureText(badgeText).width + 20;
+    ctx.globalAlpha = 0.88 + pulse * 0.12;
+    ctx.fillStyle   = isHigh ? `rgba(255,71,71,${0.82 + pulse * 0.18})` : `rgba(255,170,71,${0.82 + pulse * 0.18})`;
+    ctx.beginPath(); ctx.roundRect(8, 84, bw, 24, 8); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = "#000";
+    ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillText(badgeText, 18, 96);
+  }
+}
 
-  ctx.font = "11px 'Segoe UI', sans-serif";
-  ctx.fillStyle = "#888"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
-  ctx.fillText(`👥 ${personas.length}명 이용 중`, 16, 63);
+let activeAlert = null;
+function showAlert(message, color, durationSec) { activeAlert = { message, color, timer: durationSec }; }
+
+// ── Safety Zone Highlight ───────────────────────────────────────
+let safetyZoneAlert = null;  // { zoneId, severity, expiry }
+
+function highlightSafetyZone(zoneId, severity, durationMs = 13000) {
+  // Extend if already alerting the same zone
+  if (safetyZoneAlert?.zoneId === zoneId) {
+    safetyZoneAlert.expiry  = Date.now() + durationMs;
+    safetyZoneAlert.severity = severity;
+    return;
+  }
+  safetyZoneAlert = { zoneId, severity, expiry: Date.now() + durationMs };
+}
+function drawAlert() {
+  if (!activeAlert) return;
+  activeAlert.timer -= (1 / 60);
+  if (activeAlert.timer <= 0) { activeAlert = null; return; }
+  const alpha = Math.min(1, activeAlert.timer);
+  const W = canvas.width, boxH = 44, boxY = canvas.height - boxH - 12;
+  ctx.globalAlpha = alpha * 0.92;
+  ctx.fillStyle   = activeAlert.color;
+  ctx.beginPath(); ctx.roundRect(12, boxY, W - 24, boxH, 12); ctx.fill();
+  ctx.globalAlpha  = alpha;
+  ctx.fillStyle    = "#fff";
+  ctx.font         = "bold 13px 'Inter', sans-serif";
+  ctx.textAlign    = "center"; ctx.textBaseline = "middle";
+  ctx.fillText(activeAlert.message, W / 2, boxY + boxH / 2);
+  ctx.globalAlpha  = 1;
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  COMFORT & SAFETY EVENT ENGINE — fires real agent pipeline
+// ═══════════════════════════════════════════════════════════════
+const COMFORT_CHECK_INTERVAL = 28.0;   // check every ~28 sim-sec
+const SAFETY_CHECK_INTERVAL  = 55.0;   // check every ~55 sim-sec
+const COMFORT_EVENT_PROB     = 0.18;   // 18% chance per check
+const SAFETY_EVENT_PROB      = 0.08;   // 8% chance per check (up from 5%)
+
+// No hardcoded actions — the AI decides what temperature change to make
+const COMFORT_EVENTS = [
+  // ── Temperature ──────────────────────────────────────────────
+  { id:"too_hot",
+    message:"너무 더워요, 에어컨 좀 낮춰주세요 🥵",
+    bubble:"🥵 너무 더워요!" },
+  { id:"too_cold",
+    message:"너무 추워요, 에어컨 좀 올려주세요 🥶",
+    bubble:"🥶 너무 추워요!" },
+  { id:"stuffy",
+    message:"환기가 안 되는 것 같아요, 팬 좀 켜주세요 😮‍💨",
+    bubble:"😮‍💨 답답해요!" },
+  { id:"hot_drink_warm",
+    message:"따뜻한 음료 마시는데 너무 더운 것 같아요, 살짝 낮춰주세요 ☕",
+    bubble:"☕ 조금 더운데요" },
+  { id:"cold_draft",
+    message:"에어컨 바람이 너무 직접 맞아서 추워요, 방향 바꿔주세요 🌬️",
+    bubble:"🌬️ 바람이 직접 와요" },
+  // ── Lighting ─────────────────────────────────────────────────
+  { id:"too_dark",
+    message:"조명이 너무 어두워서 책 읽기가 힘들어요, 밝게 해주세요 💡",
+    bubble:"💡 너무 어두워요!" },
+  { id:"too_bright",
+    message:"조명이 너무 눈부셔요, 좀 낮춰주세요 😵",
+    bubble:"😵 눈이 부셔요!" },
+  // ── Noise / Environment ──────────────────────────────────────
+  { id:"noisy",
+    message:"주변이 너무 시끄러워서 집중이 안 돼요, 음악 볼륨 낮춰주세요 🔊",
+    bubble:"🔊 너무 시끄러워요!" },
+  { id:"music_low",
+    message:"음악이 너무 작아서 분위기가 없어요, 조금 높여주세요 🎵",
+    bubble:"🎵 음악이 너무 작아요" },
+  // ── Service ──────────────────────────────────────────────────
+  { id:"no_cups",
+    message:"컵이 다 떨어진 것 같아요, 보충 부탁드려요 🥤",
+    bubble:"🥤 컵이 없어요!" },
+  { id:"dirty_table",
+    message:"테이블이 지저분해요, 청소 부탁드려요 🧹",
+    bubble:"🧹 테이블이 더러워요" },
+  { id:"wifi_slow",
+    message:"와이파이가 너무 느려요, 확인해주세요 📶",
+    bubble:"📶 와이파이가 느려요!" },
+  { id:"outlet_needed",
+    message:"콘센트 자리가 없어요, 자리 좀 안내해주세요 🔌",
+    bubble:"🔌 충전 자리 필요해요" },
+];
+
+const SAFETY_EVENTS = [
+  // ── Sweat / Thermal distress (maps to sweat_wiping) ──────────
+  { id:"sweat_wiping",        detection_type:"sweat_wiping",
+    confidence:0.78, severity:"low",
+    evidence:"Customer visibly sweating and wiping forehead repeatedly",
+    bubble:"😓 너무 더워서 땀나요!" },
+  { id:"heat_exhaustion",     detection_type:"sweat_wiping",
+    confidence:0.85, severity:"medium",
+    evidence:"Customer appears flushed and fanning themselves repeatedly, possible heat discomfort",
+    bubble:"🥵 더위에 힘들어요!" },
+
+  // ── Theft (maps to theft) ─────────────────────────────────────
+  { id:"theft_attempt",       detection_type:"theft",
+    confidence:0.88, severity:"high",
+    evidence:"Customer observed concealing merchandise in bag without paying at kiosk",
+    bubble:"😰 저 사람 이상해요!" },
+  { id:"kiosk_bypass",        detection_type:"theft",
+    confidence:0.75, severity:"medium",
+    evidence:"Customer took items from shelf and left without completing kiosk transaction",
+    bubble:"🤨 계산 안 하고 가요?" },
+  { id:"multiple_items",      detection_type:"theft",
+    confidence:0.70, severity:"medium",
+    evidence:"Customer picking up numerous items repeatedly without purchasing, suspicious behavior",
+    bubble:"👀 수상한 사람 있어요" },
+
+  // ── Property Damage (maps to property_damage) ─────────────────
+  { id:"property_damage",     detection_type:"property_damage",
+    confidence:0.83, severity:"high",
+    evidence:"Loud crash heard, customer appears to have knocked over display or furniture",
+    bubble:"💥 뭔가 부서졌어요!" },
+  { id:"graffiti",            detection_type:"property_damage",
+    confidence:0.76, severity:"medium",
+    evidence:"Customer observed writing on table or wall surface",
+    bubble:"✍️ 낙서하는 사람 있어요" },
+  { id:"equipment_tamper",    detection_type:"property_damage",
+    confidence:0.80, severity:"medium",
+    evidence:"Customer tampering with kiosk or vending equipment",
+    bubble:"🖥️ 기계 건드려요!" },
+
+  // ── Fall / Emergency (maps to fall_emergency) ─────────────────
+  { id:"fall_emergency",      detection_type:"fall_emergency",
+    confidence:0.90, severity:"high",
+    evidence:"Customer collapsed on floor and not moving, possible medical emergency",
+    bubble:"🆘 사람이 쓰러졌어요!" },
+  { id:"faint_suspected",     detection_type:"fall_emergency",
+    confidence:0.74, severity:"medium",
+    evidence:"Customer slumped in chair, unresponsive to surroundings, may have fainted",
+    bubble:"😵 쓰러질 것 같아요!" },
+  { id:"slip_fall",           detection_type:"fall_emergency",
+    confidence:0.82, severity:"medium",
+    evidence:"Customer slipped on wet floor and fell, may be injured",
+    bubble:"🩹 미끄러져서 넘어졌어요!" },
+
+  // ── Suspicious Behavior ───────────────────────────────────────
+  { id:"suspicious_person",   detection_type:"suspicious_behavior",
+    confidence:0.82, severity:"medium",
+    evidence:"Customer reported feeling unsafe near another patron",
+    bubble:"😨 무서워요!" },
+  { id:"loitering",           detection_type:"suspicious_behavior",
+    confidence:0.68, severity:"low",
+    evidence:"Individual lingering near entrance for extended period without purchasing",
+    bubble:"😟 저 사람 계속 있어요" },
+  { id:"aggressive_behavior", detection_type:"suspicious_behavior",
+    confidence:0.87, severity:"high",
+    evidence:"Customer displaying aggressive posture and verbal outbursts toward other customers",
+    bubble:"😡 저 사람 무서워요!" },
+
+  // ── Harassment ────────────────────────────────────────────────
+  { id:"harassment",          detection_type:"harassment",
+    confidence:0.91, severity:"high",
+    evidence:"Customer reported harassment from another patron",
+    bubble:"🚨 도움이 필요해요!" },
+  { id:"verbal_harassment",   detection_type:"harassment",
+    confidence:0.85, severity:"high",
+    evidence:"Loud verbal altercation between customers, one customer appears distressed",
+    bubble:"📢 싸움이 났어요!" },
+];
+
+const personaEventTimers = {};
+
+function tickComfortSafety(dtSec) {
+  for (const p of personas) {
+    if (!personaEventTimers[p.id]) {
+      personaEventTimers[p.id] = {
+        comfortTimer: COMFORT_CHECK_INTERVAL * (0.5 + Math.random()),
+        safetyTimer:  SAFETY_CHECK_INTERVAL  * (0.5 + Math.random()),
+      };
+    }
+    const t = personaEventTimers[p.id];
+    if (p.currentStage?.id === "sitting" || p.currentStage?.id === "waiting") {
+      t.comfortTimer -= dtSec * simSpeed;
+      if (t.comfortTimer <= 0) {
+        t.comfortTimer = COMFORT_CHECK_INTERVAL;
+        if (Math.random() < COMFORT_EVENT_PROB)
+          triggerComfortEvent(p, COMFORT_EVENTS[Math.floor(Math.random() * COMFORT_EVENTS.length)]);
+      }
+    }
+    t.safetyTimer -= dtSec * simSpeed;
+    if (t.safetyTimer <= 0) {
+      t.safetyTimer = SAFETY_CHECK_INTERVAL;
+      if (Math.random() < SAFETY_EVENT_PROB)
+        triggerSafetyEvent(p, SAFETY_EVENTS[Math.floor(Math.random() * SAFETY_EVENTS.length)]);
+    }
+  }
+  for (const id of Object.keys(personaEventTimers))
+    if (!personas.find(p => p.id === id)) delete personaEventTimers[id];
+}
+
+// ═══════════════════════════════════════════════════════════════
+//  TEMPERATURE WIDGET — live display in right panel
+// ═══════════════════════════════════════════════════════════════
+function tempColor(t) {
+  if (t < 19) return "#47c8ff";   // cold  — cyan
+  if (t < 22) return "#47a8ff";   // cool  — blue
+  if (t < 26) return "#47ff8f";   // comfy — green
+  if (t < 29) return "#ffaa47";   // warm  — orange
+  return "#ff4747";               // hot   — red
+}
+function tempLabel(t) {
+  if (t < 19) return "❄️ 추움";
+  if (t < 22) return "🌬️ 시원함";
+  if (t < 26) return "✅ 쾌적";
+  if (t < 29) return "🌤️ 따뜻함";
+  return "🔥 더움";
+}
+function tempBarPct(t) {
+  // 18°C → 0%,  30°C → 100%
+  return Math.round(Math.max(0, Math.min(100, ((t - 18) / 12) * 100)));
+}
+
+function updateTempWidget(newTemp, zoneName, delta) {
+  const prev = simRoomTemp;
+  simRoomTemp = newTemp;
+
+  const color  = tempColor(newTemp);
+  const valEl  = document.getElementById("tempValue");
+  const barEl  = document.getElementById("tempBar");
+  const statusEl = document.getElementById("tempStatus");
+  const zoneEl   = document.getElementById("tempZone");
+  const deltaEl  = document.getElementById("tempDelta");
+  const widget   = document.getElementById("tempWidget");
+
+  valEl.textContent  = newTemp.toFixed(1) + "°C";
+  valEl.style.color  = color;
+  barEl.style.width  = tempBarPct(newTemp) + "%";
+  barEl.style.background = color;
+  statusEl.textContent   = tempLabel(newTemp);
+  if (zoneName) zoneEl.textContent = zoneName;
+
+  // Show delta badge if temperature actually changed
+  if (delta !== undefined && delta !== 0) {
+    const sign = delta > 0 ? "+" : "";
+    deltaEl.textContent  = sign + delta.toFixed(1) + "°C";
+    deltaEl.style.background = delta > 0 ? "rgba(255,71,71,0.15)" : "rgba(71,200,255,0.15)";
+    deltaEl.style.color      = delta > 0 ? "#ff4747" : "#47c8ff";
+    deltaEl.classList.remove("show");
+    void deltaEl.offsetWidth; // force reflow to restart animation
+    deltaEl.classList.add("show");
+  }
+
+  // Flash the widget background
+  widget.classList.remove("flash");
+  void widget.offsetWidth;
+  widget.classList.add("flash");
+
+  // Also update the canvas HUD (already uses simRoomTemp)
+  log(`<span class="hi">[온도]</span> 🌡️ ${prev.toFixed(1)}°C → ${newTemp.toFixed(1)}°C (${zoneName || "구역"})`);
+}
+
+// ── Comfort → full facility_graph pipeline (AI decides temp change) ──
+function triggerComfortEvent(p, ev) {
+  p.speechBubble = ev.bubble; p.speechTimer = 6;
+  log(`<span class="warn">[불편]</span> ${p.emoji} ${p.name} — ${ev.bubble}`);
+  showAlert(ev.bubble, "#ffaa47", 5);
+
+  // Animate full graph: dispatch → customer → reconcile → actuator
+  resetGraph();
+  document.getElementById("gnode-start").classList.add("active");
+  setTimeout(() => activateNode("orchestrator_dispatch"), 200);
+  setTimeout(() => activateNode("customer"), 900);
+
+  // No action sent — AI decides via full graph
+  fetch("/persona-comfort", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      persona_name: p.name,
+      persona_age:  p.age,
+      zone_id:      p.assignedSeat || p.currentStage?.zone || "study_zone",
+      event_id:     ev.id,
+      message:      ev.message,
+      current_temp: simRoomTemp,
+    }),
+  })
+  .then(r => r.json())
+  .then(data => {
+    activateNode("orchestrator_reconcile");
+    setTimeout(() => activateNode("actuator"), 600);
+    setTimeout(() => finishGraph(), 1400);
+
+    if (data.ok) {
+      if (data.bot_message) {
+        p.speechBubble = "🤖 " + data.bot_message.slice(0, 28);
+        p.speechTimer  = 7;
+        log(`<span class="agent">[AI응답]</span> ${data.bot_message.slice(0, 60)}`);
+        showCanvasToast(`🤖 ${data.bot_message.slice(0, 60)}`, "ok", 7);
+      }
+      const ctrl = data.ctrl_result;
+      if (ctrl?.executed && ctrl.new_temp != null) {
+        const delta = ctrl.delta ?? (ctrl.new_temp - simRoomTemp);
+        updateTempWidget(ctrl.new_temp, p.assignedSeat || p.currentStage?.zone, delta);
+        showCanvasToast(`🌡️ AI 온도 조정 → ${ctrl.new_temp.toFixed(1)}°C`, "ok", 5);
+      }
+    }
+  })
+  .catch(e => { console.warn("[comfort] fetch failed:", e); finishGraph(); });
+}
+
+// ── Safety → safety_agent pipeline ─────────────────────────────
+function triggerSafetyEvent(p, ev) {
+  p.speechBubble = ev.bubble; p.speechTimer = 8;
+  const color   = ev.severity === "high" ? "#ff4747" : "#ffaa47";
+  const zoneId  = p.assignedSeat || p.currentStage?.zone || "study_zone";
+  const zLabel  = getZone(zoneId)?.label || zoneId;
+  log(`<span class="danger">[⚠️안전]</span> ${p.emoji} ${p.name} — <span style="color:${color};font-weight:700">[${zLabel}]</span> ${ev.bubble}`);
+  showAlert(`🚨 [${zLabel}] ${ev.bubble}`, color, 8);
+  highlightSafetyZone(zoneId, ev.severity, 14000);
+
+  // Animate graph: dispatch → safety
+  resetGraph();
+  document.getElementById("gnode-start").classList.add("active");
+  setTimeout(() => activateNode("orchestrator_dispatch"), 200);
+  setTimeout(() => activateNode("safety"), 900);
+
+  fetch("/persona-safety", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      persona_name:   p.name, persona_age:   p.age,
+      zone_id:        p.assignedSeat || p.currentStage?.zone || "study_zone",
+      event_id:       ev.id, detection_type: ev.detection_type,
+      confidence:     ev.confidence, severity: ev.severity,
+      evidence:       ev.evidence, current_temp: simRoomTemp,
+    }),
+  })
+  .then(r => r.json())
+  .then(data => {
+    activateNode("orchestrator_reconcile");
+    setTimeout(() => activateNode("actuator"), 600);
+    setTimeout(() => finishGraph(), 1400);
+
+    if (data.bot_message) {
+      p.speechBubble = "🤖 " + data.bot_message.slice(0, 28);
+      p.speechTimer  = 8;
+      log(`<span class="agent">[AI응답]</span> ${data.bot_message.slice(0, 60)}`);
+      const cls = ev.severity === "high" ? "danger" : "warn";
+      showCanvasToast(`🚨 ${data.bot_message.slice(0, 60)}`, cls, 8);
+    }
+  })
+  .catch(e => { console.warn("[safety] fetch failed:", e); finishGraph(); });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -809,31 +1599,23 @@ function getSpawnInterval() {
   return Math.max(1.5, (base - simSpeed * 1.2) / simSpeed);
 }
 
-// ── REPLACE your existing loop() function ─────────────────────
 function loop(ts) {
   if (!simRunning) return;
   const dt = lastTs ? Math.min((ts - lastTs) / 1000, 0.1) : 0;
-  lastTs   = ts;
+  lastTs = ts;
   simTime += dt * 4 * simSpeed;
 
   spawnTimer -= dt;
   if (spawnTimer <= 0 && personas.length < getMaxCapacity()) {
-    spawnPersona();
-    spawnTimer = getSpawnInterval();
+    spawnPersona(); spawnTimer = getSpawnInterval();
   }
 
-  tickComfortSafety(dt);   // ✅ NEW
-
+  tickComfortSafety(dt);
   updatePersonas(dt);
-  drawCafe();
-  drawPersonas();
-  drawAlert();             // ✅ NEW — draw before HUD so HUD is on top
-  drawHUD();
+  drawCafe(); drawPersonas(); drawAlert(); drawHUD();
   updatePersonaList();
-
   lastRaf = requestAnimationFrame(loop);
 }
-
 
 // ═══════════════════════════════════════════════════════════════
 //  CONTROLS
@@ -843,8 +1625,7 @@ async function startSim() {
   if (!district) return;
 
   const btn = document.getElementById("startBtn");
-  btn.disabled    = true;
-  btn.textContent = "⏳ AI 분석 중...";
+  btn.disabled = true; btn.textContent = "⏳ AI 분석 중...";
   document.getElementById("statusDot").classList.remove("idle");
   document.getElementById("statusText").textContent = "⏳ 상권 분석 중...";
 
@@ -859,19 +1640,17 @@ async function startSim() {
     } catch(e) { console.warn("Profile fetch failed"); }
   } catch(e) {
     alert(`흐름 생성 실패: ${e.message}`);
-    btn.disabled    = false;
-    btn.textContent = "▶ 시뮬레이션 시작";
+    btn.disabled = false; btn.textContent = "▶ 시뮬레이션 시작";
     document.getElementById("statusDot").classList.add("idle");
     document.getElementById("statusText").textContent = "오류 발생";
     return;
   }
 
-  // Reset state
-  personas   = []; totalVisits = 0; totalOrders = 0;
-  simTime    = 8 * 60; spawnTimer = 1.5;
+  personas = []; totalVisits = 0; totalOrders = 0;
+  simTime = 8 * 60; spawnTimer = 1.5;
   simRunning = true; nameIdx = 0;
   SEAT_ZONES.forEach(id => { seatOccupancy[id] = null; });
-  bgCache = null;
+  bgCache = null; resetGraph();
 
   btn.style.display = "none";
   document.getElementById("stopBtn").style.display = "block";
@@ -879,11 +1658,11 @@ async function startSim() {
 
   updateStats();
   const types = getPersonaTypes();
-  log(`<span class="ev">[시작]</span> ☕ ${district} 무인카페 시뮬레이션 시작 🚀`);
+  log(`<span class="agent">[시작]</span> ☕ ${district} 무인카페 시뮬레이션 시작 🚀`);
   log(`<span class="hi">[설정]</span> 페르소나: ${types.map(t => t.label).join(", ")}`);
   log(`<span class="hi">[설정]</span> 메뉴: ${getDrinkMenu().slice(0,4).join(", ")} 외 ${Math.max(0,getDrinkMenu().length-4)}종`);
 
-  lastTs  = null;
+  lastTs = null;
   lastRaf = requestAnimationFrame(loop);
 }
 
@@ -896,6 +1675,7 @@ function stopSim() {
   document.getElementById("stopBtn").style.display    = "none";
   document.getElementById("statusDot").classList.add("idle");
   document.getElementById("statusText").textContent   = "정지됨";
+  resetGraph();
   drawCafe(); drawPersonas();
 }
 
@@ -911,12 +1691,9 @@ async function loadDistricts() {
     const sel  = document.getElementById("districtSelect");
     (data.districts || []).forEach(d => {
       const o = document.createElement("option");
-      o.value = d; o.textContent = d;
-      sel.appendChild(o);
+      o.value = d; o.textContent = d; sel.appendChild(o);
     });
-    sel.onchange = () => {
-      document.getElementById("startBtn").disabled = !sel.value;
-    };
+    sel.onchange = () => { document.getElementById("startBtn").disabled = !sel.value; };
   } catch(e) { console.error("Districts load failed", e); }
 }
 
@@ -930,213 +1707,6 @@ setInterval(() => {
 buildBgCache();
 drawCafe();
 loadDistricts();
-// ═══════════════════════════════════════════════════════════════
-//  COMFORT & SAFETY EVENT ENGINE
-// ═══════════════════════════════════════════════════════════════
-
-// Config (mirrored from cafe_flow.py)
-const COMFORT_CHECK_INTERVAL = 30.0;
-const SAFETY_CHECK_INTERVAL  = 60.0;
-const COMFORT_EVENT_PROB     = 0.15;
-const SAFETY_EVENT_PROB      = 0.05;
-
-const COMFORT_EVENTS = [
-  { id:"too_hot",  message:"너무 더워요, 에어컨 좀 낮춰주세요 🥵",
-    action:{type:"temperature", value:-2}, bubble:"🥵 너무 더워요!" },
-  { id:"too_cold", message:"너무 추워요, 에어컨 좀 올려주세요 🥶",
-    action:{type:"temperature", value:+2}, bubble:"🥶 너무 추워요!" },
-  { id:"stuffy",   message:"환기가 안 되는 것 같아요, 팬 좀 켜주세요 😮‍💨",
-    action:{type:"fan", value:"on"},        bubble:"😮‍💨 답답해요!" },
-];
-
-const SAFETY_EVENTS = [
-  { id:"suspicious_person", detection_type:"suspicious_behavior",
-    confidence:0.82, severity:"medium",
-    evidence:"Customer reported feeling unsafe near another patron",
-    bubble:"😨 무서워요!" },
-  { id:"harassment", detection_type:"harassment",
-    confidence:0.91, severity:"high",
-    evidence:"Customer reported harassment",
-    bubble:"🚨 도움이 필요해요!" },
-];
-
-// Per-persona timers  { personaId → { comfortTimer, safetyTimer } }
-const personaEventTimers = {};
-
-// Active alert overlay  { message, color, timer }
-let activeAlert = null;
-
-// Current simulated room temperature (updated by comfort events)
-let simRoomTemp = 24.0;
-
-// ── Timer tick (called from main loop with dtSec) ──────────────
-function tickComfortSafety(dtSec) {
-  for (const p of personas) {
-    if (!personaEventTimers[p.id]) {
-      personaEventTimers[p.id] = {
-        comfortTimer: COMFORT_CHECK_INTERVAL * (0.5 + Math.random()),
-        safetyTimer:  SAFETY_CHECK_INTERVAL  * (0.5 + Math.random()),
-      };
-    }
-    const t = personaEventTimers[p.id];
-
-    // Comfort check — only while sitting or waiting
-    if (p.currentStage?.id === "sitting" || p.currentStage?.id === "waiting") {
-      t.comfortTimer -= dtSec * simSpeed;
-      if (t.comfortTimer <= 0) {
-        t.comfortTimer = COMFORT_CHECK_INTERVAL;
-        if (Math.random() < COMFORT_EVENT_PROB) {
-          const ev = COMFORT_EVENTS[Math.floor(Math.random() * COMFORT_EVENTS.length)];
-          triggerComfortEvent(p, ev);
-        }
-      }
-    }
-
-    // Safety check — anywhere, anytime
-    t.safetyTimer -= dtSec * simSpeed;
-    if (t.safetyTimer <= 0) {
-      t.safetyTimer = SAFETY_CHECK_INTERVAL;
-      if (Math.random() < SAFETY_EVENT_PROB) {
-        const ev = SAFETY_EVENTS[Math.floor(Math.random() * SAFETY_EVENTS.length)];
-        triggerSafetyEvent(p, ev);
-      }
-    }
-  }
-
-  // Clear timers for personas that have left
-  for (const id of Object.keys(personaEventTimers)) {
-    if (!personas.find(p => p.id === id)) delete personaEventTimers[id];
-  }
-}
-
-// ── Comfort trigger ────────────────────────────────────────────
-function triggerComfortEvent(p, ev) {
-  // Show speech bubble on persona
-  p.speechBubble = ev.bubble;
-  p.speechTimer  = 6;
-
-  log(`<span class="warn">[불편]</span> ${p.emoji} ${p.name} — ${ev.bubble}`);
-  showAlert(ev.bubble, "#f59e0b", 5);
-
-  // POST to backend (fire-and-forget)
-  fetch("/persona-comfort", {
-    method:  "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      persona_name: p.name,
-      persona_age:  p.age,
-      zone_id:      p.assignedSeat || p.currentStage?.zone || "study_zone",
-      event_id:     ev.id,
-      message:      ev.message,
-      action:       ev.action,
-      current_temp: simRoomTemp,
-    }),
-  })
-  .then(r => r.json())
-  .then(data => {
-    if (data.ok) {
-      // Show bot response as speech bubble
-      if (data.bot_message) {
-        p.speechBubble = "🤖 " + data.bot_message.slice(0, 28);
-        p.speechTimer  = 7;
-      }
-      // Update simulated room temp
-      if (data.ctrl_result?.new_temp) {
-        simRoomTemp = data.ctrl_result.new_temp;
-        log(`<span class="hi">[AC제어]</span> 온도 조정 → ${simRoomTemp.toFixed(1)}°C`);
-        showAlert(`🌡️ 온도 조정됨 → ${simRoomTemp.toFixed(1)}°C`, "#10b981", 4);
-      }
-    }
-  })
-  .catch(e => console.warn("[comfort] fetch failed:", e));
-}
-
-// ── Safety trigger ─────────────────────────────────────────────
-function triggerSafetyEvent(p, ev) {
-  p.speechBubble = ev.bubble;
-  p.speechTimer  = 8;
-
-  const color = ev.severity === "high" ? "#ef4444" : "#f59e0b";
-  log(`<span class="warn">[⚠️안전]</span> ${p.emoji} ${p.name} — ${ev.bubble}`);
-  showAlert(`🚨 안전 이벤트: ${ev.bubble}`, color, 8);
-
-  fetch("/persona-safety", {
-    method:  "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      persona_name:   p.name,
-      persona_age:    p.age,
-      zone_id:        p.assignedSeat || p.currentStage?.zone || "study_zone",
-      event_id:       ev.id,
-      detection_type: ev.detection_type,
-      confidence:     ev.confidence,
-      severity:       ev.severity,
-      evidence:       ev.evidence,
-      current_temp:   simRoomTemp,
-    }),
-  })
-  .then(r => r.json())
-  .then(data => {
-    if (data.bot_message) {
-      p.speechBubble = "🤖 " + data.bot_message.slice(0, 28);
-      p.speechTimer  = 8;
-      log(`<span class="hi">[AI응답]</span> ${data.bot_message.slice(0, 60)}`);
-    }
-  })
-  .catch(e => console.warn("[safety] fetch failed:", e));
-}
-
-// ── Alert overlay ──────────────────────────────────────────────
-function showAlert(message, color, durationSec) {
-  activeAlert = { message, color, timer: durationSec };
-}
-
-function drawAlert() {
-  if (!activeAlert) return;
-  activeAlert.timer -= (1 / 60);   // approximate per-frame decay
-  if (activeAlert.timer <= 0) { activeAlert = null; return; }
-
-  const alpha  = Math.min(1, activeAlert.timer);
-  const W      = canvas.width;
-  const boxH   = 44;
-  const boxY   = canvas.height - boxH - 12;
-
-  // Background pill
-  ctx.globalAlpha = alpha * 0.92;
-  ctx.fillStyle   = activeAlert.color;
-  ctx.beginPath();
-  ctx.roundRect(12, boxY, W - 24, boxH, 12);
-  ctx.fill();
-
-  // Text
-  ctx.globalAlpha  = alpha;
-  ctx.fillStyle    = "#fff";
-  ctx.font         = "bold 13px 'Segoe UI', sans-serif";
-  ctx.textAlign    = "center";
-  ctx.textBaseline = "middle";
-  ctx.fillText(activeAlert.message, W / 2, boxY + boxH / 2);
-  ctx.globalAlpha  = 1;
-}
-
-// ── SSE listener — receives events broadcast from app.py ──────
-(function initSSE() {
-  const es = new EventSource("/stream");
-
-  es.addEventListener("comfort_event", e => {
-    const d = JSON.parse(e.data);
-    log(`<span class="hi">[서버확인]</span> 🌡️ ${d.persona_name} 요청 처리됨 — ${d.bot_message?.slice(0,40) ?? ""}`);
-  });
-
-  es.addEventListener("safety_alert", e => {
-    const d    = JSON.parse(e.data);
-    const color = d.severity === "high" ? "#ef4444" : "#f59e0b";
-    showAlert(`🚨 [${d.zone_id}] ${d.bot_message?.slice(0,40) ?? d.event_id}`, color, 10);
-    log(`<span class="warn">[🚨안전알림]</span> ${d.persona_name} — ${d.severity} / ${d.detection_type}`);
-  });
-
-  es.onerror = () => console.warn("[SSE] 연결 오류, 재시도 중...");
-})();
-
 </script>
 </body>
 </html>
