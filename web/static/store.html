@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>☕ 무인카페 시뮬레이션</title>
+  <title>무인매장 관제 — 매장 시뮬레이션</title>
   <style>
     /* ═══════════════════════════════════════════════════
        UNIFIED DESIGN SYSTEM — matches index.html exactly
@@ -11,19 +11,19 @@
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:       #0d0d0d;
-      --surface:  #141414;
-      --surface2: #1c1c1c;
-      --border:   #2a2a2a;
-      --accent:   #e8ff47;
-      --accent2:  #47c8ff;
-      --danger:   #ff4747;
-      --warning:  #ffaa47;
-      --ok:       #47ff8f;
-      --text:     #f0f0f0;
-      --muted:    #555;
-      --font:     'Inter', system-ui, sans-serif;
-      --radius:   10px;
+      --bg:      #111111;
+      --surface: #1a1a1a;
+      --surface2:#222222;
+      --border:  #2d2d2d;
+      --accent:  #4a8cf5;
+      --accent2: #50c8a4;
+      --danger:  #e05555;
+      --warning: #d49224;
+      --ok:      #42a875;
+      --text:    #e2e2e2;
+      --muted:   #5a5a5a;
+      --font:    'Inter', 'Noto Sans KR', system-ui, sans-serif;
+      --radius:  8px;
     }
 
     body {
@@ -40,19 +40,19 @@
     /* ── TOP NAV ── */
     .topnav {
       height: 48px;
-      background: #16162a;
-      border-bottom: 1px solid #2a2a45;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
       display: flex; align-items: center;
       padding: 0 20px; gap: 14px;
       flex-shrink: 0; z-index: 100;
     }
-    .topnav .logo { font-size: 14px; font-weight: 700; color: #a78bfa; margin-right: 12px; }
+    .topnav .logo { font-size: 13px; font-weight: 700; color: var(--text); margin-right: 12px; letter-spacing: 0.02em; }
     .topnav a {
-      color: #888; text-decoration: none; font-size: 12px;
-      padding: 5px 12px; border-radius: 6px; transition: all 0.2s;
+      color: var(--muted); text-decoration: none; font-size: 12px;
+      padding: 5px 12px; border-radius: 6px; transition: all 0.15s;
     }
-    .topnav a:hover  { background: #1e1e38; color: #fff; }
-    .topnav a.active { background: #6366f1; color: #fff; font-weight: 600; }
+    .topnav a:hover  { background: var(--surface2); color: var(--text); }
+    .topnav a.active { background: var(--accent); color: #fff; font-weight: 600; }
     .topnav .spacer  { flex: 1; }
 
     /* ── STATUS BAR ── */
@@ -94,29 +94,28 @@
     .g-node .g-ttl { font-size: 10px; font-weight: 600; }
     .g-node .g-sub { font-size: 9px; color: var(--muted); margin-top: 1px; }
     .g-node.dim { opacity: 0.35; }
-    .g-node.passed { border-color: var(--ok); background: rgba(71,255,143,0.07); }
+    .g-node.passed { border-color: var(--ok); background: rgba(66,168,117,0.08); }
     .g-node.passed .g-ttl { color: var(--ok); }
     .g-node.active {
       border-color: var(--accent); background: var(--accent);
-      color: #000; transform: scale(1.06);
-      box-shadow: 0 0 18px rgba(232,255,71,0.5);
-      animation: nodeGlow 1.4s ease-in-out infinite;
+      color: #fff; transform: scale(1.05);
+      animation: nodePulse 1.4s ease-in-out infinite;
     }
-    .g-node.active .g-sub { color: rgba(0,0,0,0.6); }
+    .g-node.active .g-sub { color: rgba(255,255,255,0.65); }
     .g-terminal {
       background: transparent; border: 2px dashed var(--border);
       color: var(--muted); padding: 6px 10px; border-radius: 999px;
       font-size: 10px; text-align: center; flex-shrink: 0;
       min-width: 50px; transition: all 0.3s;
     }
-    .g-terminal.active { border-color: var(--ok); color: var(--ok); box-shadow: 0 0 12px rgba(71,255,143,0.4); }
+    .g-terminal.active { border-color: var(--ok); color: var(--ok); }
     .g-terminal.passed { border-color: var(--ok); color: var(--ok); opacity: 0.6; }
-    .g-arrow { color: var(--warning); font-size: 12px; font-weight: bold; flex-shrink: 0; }
+    .g-arrow { color: var(--border); font-size: 12px; font-weight: bold; flex-shrink: 0; }
     .g-branch { display: flex; flex-direction: column; gap: 4px; flex-shrink: 0; }
 
-    @keyframes nodeGlow {
-      0%,100% { box-shadow: 0 0 18px rgba(232,255,71,0.5); }
-      50%      { box-shadow: 0 0 32px rgba(232,255,71,0.9); }
+    @keyframes nodePulse {
+      0%, 100% { transform: scale(1.05); }
+      50%       { transform: scale(1.08); }
     }
 
     /* ── MAIN LAYOUT ── */
@@ -124,7 +123,7 @@
 
     .canvas-wrap {
       flex: 1; display: flex; align-items: center; justify-content: center;
-      background: #0a0a14; overflow: hidden; position: relative;
+      background: #0d0d0d; overflow: hidden; position: relative;
     }
     canvas#store { image-rendering: pixelated; }
 
@@ -189,7 +188,7 @@
       color: var(--muted); cursor: pointer; transition: all 0.15s;
       font-family: var(--font); text-transform: uppercase;
     }
-    .export-btn:hover { background: var(--accent); color: #000; border-color: var(--accent); }
+    .export-btn:hover { background: var(--accent); color: #fff; border-color: var(--accent); }
     .export-btn.done  { color: var(--ok); border-color: var(--ok); background: rgba(71,255,143,0.08); }
 
     /* ── SIM SETTINGS ── */
@@ -210,7 +209,7 @@
       border: 1px solid var(--border); font-family: var(--font);
     }
     .btn-primary { background: var(--surface2); color: var(--text); }
-    .btn-primary:hover:not(:disabled) { background: var(--accent); color: #000; border-color: var(--accent); }
+    .btn-primary:hover:not(:disabled) { background: var(--accent); color: #fff; border-color: var(--accent); }
     .btn-primary:disabled { opacity: 0.4; cursor: not-allowed; }
     .btn-danger { background: var(--surface2); color: var(--danger); border-color: var(--danger); margin-top: 6px; }
     .btn-danger:hover { background: var(--danger); color: #000; }
@@ -317,10 +316,10 @@
 
 <!-- TOP NAV -->
 <nav class="topnav">
-  <span class="logo">🏙️ 무인매장 AI</span>
-  <a href="/">🤖 에이전트 흐름</a>
-  <a href="/dashboard">📍 상권 대시보드</a>
-  <a href="/store" class="active">☕ 카페 시뮬레이션</a>
+  <span class="logo">무인매장 관제</span>
+  <a href="/">에이전트 흐름</a>
+  <a href="/dashboard">상권 대시보드</a>
+  <a href="/store" class="active">매장 시뮬레이션</a>
   <span class="spacer"></span>
   <span id="clock" style="font-size:12px;color:var(--muted);"></span>
 </nav>
@@ -985,6 +984,8 @@ function arriveAtStage(p) {
     }
     seatOccupancy[seat] = p.id;
     p.assignedSeat = seat;
+    // Hard cap: guarantee persona leaves after 30–90 real seconds (scaled by simSpeed)
+    p.maxStayTimer = rand(30, 90) / simSpeed;
     log(`<span class="hi">[착석]</span> ${p.emoji} ${p.name} → ${getZone(seat)?.label || seat}`);
   }
   if (stage.id === "trash" && p.assignedSeat) {
@@ -1030,6 +1031,10 @@ function updatePersonas(dtSec) {
       else { p.x += (dx/dist)*speed*dtSec; p.y += (dy/dist)*speed*dtSec; }
     } else if (p.state === "acting") {
       p.stateTimer -= dtSec;
+      if (p.maxStayTimer != null && p.currentStage?.id === "sitting") {
+        p.maxStayTimer -= dtSec;
+        if (p.maxStayTimer <= 0) { startLeaving(p); continue; }
+      }
       if (p.stateTimer <= 0) advanceToNextStage(p);
     } else if (p.state === "leaving") {
       const dx = p.tx - p.x, dy = p.ty - p.y;
@@ -1065,7 +1070,7 @@ function buildBgCache() {
     ox.fillStyle = z.color;
     ox.beginPath(); ox.roundRect(x+2, y+2, w-4, h-4, 10); ox.fill();
     const border = {
-      service:"#6366f1", seat:"#2a2a55",
+      service:"#4a8cf5", seat:"#2a2a44",
       util:"#3a3a2a", entrance:"#2a5a2a", wall:"#1e3a5a",
     }[z.type] || "#3a3a5a";
     ox.strokeStyle = border; ox.lineWidth = z.type === "service" ? 2 : 1;
@@ -1208,13 +1213,13 @@ function drawPersonas() {
 
 function drawHUD() {
   const period   = timePeriod();
-  const pColor   = { morning:"#ffaa47", afternoon:"#47ff8f", evening:"#6366f1" }[period];
+  const pColor   = { morning:"#d49224", afternoon:"#42a875", evening:"#7b6ef5" }[period];
   const periodKr = { morning:"오전", afternoon:"오후", evening:"저녁" }[period];
 
   ctx.fillStyle = "rgba(13,13,13,0.90)";
   ctx.beginPath(); ctx.roundRect(8, 8, 150, 36, 8); ctx.fill();
   ctx.font = "bold 15px 'Inter', monospace";
-  ctx.fillStyle = "#e8ff47"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
+  ctx.fillStyle = "#e2e2e2"; ctx.textAlign = "left"; ctx.textBaseline = "middle";
   ctx.fillText("🕐 " + fmtTime(simTime), 16, 26);
   ctx.font = "bold 11px 'Inter', sans-serif"; ctx.fillStyle = pColor;
   ctx.fillText(periodKr, 124, 26);

@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Cafe Check — AI Dashboard</title>
+  <title>무인매장 관제 — 에이전트 흐름</title>
   <style>
     *,
     *::before,
@@ -15,19 +15,19 @@
     }
 
     :root {
-      --bg: #0d0d0d;
-      --surface: #141414;
-      --surface2: #1c1c1c;
-      --border: #2a2a2a;
-      --accent: #e8ff47;
-      --accent2: #47c8ff;
-      --danger: #ff4747;
-      --warning: #ffaa47;
-      --ok: #47ff8f;
-      --text: #f0f0f0;
-      --muted: #555;
-      --font: 'Inter', system-ui, sans-serif;
-      --radius: 10px;
+      --bg:      #111111;
+      --surface: #1a1a1a;
+      --surface2:#222222;
+      --border:  #2d2d2d;
+      --accent:  #4a8cf5;
+      --accent2: #50c8a4;
+      --danger:  #e05555;
+      --warning: #d49224;
+      --ok:      #42a875;
+      --text:    #e2e2e2;
+      --muted:   #5a5a5a;
+      --font:    'Inter', 'Noto Sans KR', system-ui, sans-serif;
+      --radius:  8px;
     }
 
     body {
@@ -42,8 +42,8 @@
     }
     .topnav {
       height: 48px;
-      background: #16162a;
-      border-bottom: 1px solid #2a2a45;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
       padding: 0 20px;
@@ -52,19 +52,19 @@
       z-index: 100;
     }
 
-    .topnav .logo { font-size: 14px; font-weight: 700; color: #a78bfa; margin-right: 12px; }
+    .topnav .logo { font-size: 13px; font-weight: 700; color: var(--text); margin-right: 12px; letter-spacing: 0.02em; }
 
     .topnav a {
-      color: #888;
+      color: var(--muted);
       text-decoration: none;
       font-size: 12px;
       padding: 5px 12px;
       border-radius: 6px;
-      transition: all 0.2s;
+      transition: all 0.15s;
     }
 
-    .topnav a:hover  { background: #1e1e38; color: #fff; }
-    .topnav a.active { background: #6366f1; color: #fff; font-weight: 600; }
+    .topnav a:hover  { background: var(--surface2); color: var(--text); }
+    .topnav a.active { background: var(--accent); color: #fff; font-weight: 600; }
 
     .topnav .spacer { flex: 1; }
     /* ── HEADER ── */
@@ -84,12 +84,10 @@
     }
 
     .brand-dot {
-      width: 10px;
-      height: 10px;
+      width: 8px;
+      height: 8px;
       border-radius: 50%;
-      background: var(--accent);
-      box-shadow: 0 0 8px var(--accent);
-      animation: pulse 2s infinite;
+      background: var(--ok);
     }
 
     .brand h1 {
@@ -170,7 +168,7 @@
 
     .scenario-bar button:hover:not(:disabled) {
       background: var(--accent);
-      color: #000;
+      color: #fff;
       border-color: var(--accent);
     }
 
@@ -233,7 +231,7 @@
 
     .g-node.passed {
       border-color: var(--ok);
-      background: rgba(71, 255, 143, 0.07);
+      background: rgba(66, 168, 117, 0.08);
     }
 
     .g-node.passed .g-ttl {
@@ -243,26 +241,18 @@
     .g-node.active {
       border-color: var(--accent);
       background: var(--accent);
-      color: #000;
-      transform: scale(1.06);
-      box-shadow: 0 0 18px rgba(232, 255, 71, 0.5);
-      animation: nodeGlow 1.4s ease-in-out infinite;
+      color: #fff;
+      transform: scale(1.05);
+      animation: nodePulse 1.4s ease-in-out infinite;
     }
 
     .g-node.active .g-sub {
-      color: rgba(0, 0, 0, 0.6);
+      color: rgba(255, 255, 255, 0.65);
     }
 
-    @keyframes nodeGlow {
-
-      0%,
-      100% {
-        box-shadow: 0 0 18px rgba(232, 255, 71, 0.5);
-      }
-
-      50% {
-        box-shadow: 0 0 32px rgba(232, 255, 71, 0.9);
-      }
+    @keyframes nodePulse {
+      0%, 100% { transform: scale(1.05); }
+      50%       { transform: scale(1.08); }
     }
 
     .g-terminal {
@@ -281,7 +271,6 @@
     .g-terminal.active {
       border-color: var(--ok);
       color: var(--ok);
-      box-shadow: 0 0 12px rgba(71, 255, 143, 0.4);
     }
 
     .g-terminal.passed {
@@ -291,7 +280,7 @@
     }
 
     .g-arrow {
-      color: var(--warning);
+      color: var(--border);
       font-size: 14px;
       font-weight: bold;
       flex-shrink: 0;
@@ -492,9 +481,9 @@
       font-size: 10px;
       padding: 2px 8px;
       border-radius: 4px;
-      background: #1a1a2e;
+      background: var(--surface2);
       color: var(--accent2);
-      border: 1px solid rgba(71, 200, 255, 0.2);
+      border: 1px solid var(--border);
       font-weight: 600;
       letter-spacing: 0.05em;
       margin-right: 6px;
@@ -506,25 +495,10 @@
     }
 
 
-    .tag-ok {
-      background: #0a2e1a;
-      color: var(--ok);
-    }
-
-    .tag-warn {
-      background: #2e1e0a;
-      color: var(--warning);
-    }
-
-    .tag-danger {
-      background: #2e0a0a;
-      color: var(--danger);
-    }
-
-    .tag-info {
-      background: #0a1e2e;
-      color: var(--accent2);
-    }
+    .tag-ok     { background: rgba(66,168,117,0.12); color: var(--ok); }
+    .tag-warn   { background: rgba(212,146,36,0.12); color: var(--warning); }
+    .tag-danger { background: rgba(224,85,85,0.12);  color: var(--danger); }
+    .tag-info   { background: rgba(80,200,164,0.12); color: var(--accent2); }
 
     .signal-index {
       font-size: 9px;
@@ -759,7 +733,7 @@
 
     .action-btn:hover {
       background: var(--accent);
-      color: #000;
+      color: #fff;
       border-color: var(--accent);
     }
 
@@ -1035,12 +1009,12 @@
 <body>
 
   <nav class="topnav">
-    <span class="logo">🏙️ 무인매장 AI</span>
-    <a href="/">🤖 에이전트 흐름</a>
-    <a href="/dashboard">📍 상권 대시보드</a>
-    <a href="/store" class="active">🏪 매장 시뮬레이션</a>
+    <span class="logo">무인매장 관제</span>
+    <a href="/" class="active">에이전트 흐름</a>
+    <a href="/dashboard">상권 대시보드</a>
+    <a href="/store">매장 시뮬레이션</a>
     <span class="spacer"></span>
-    <span id="clock" style="font-size:12px;color:#555;"></span>
+    <span id="clock" style="font-size:12px;color:var(--muted);"></span>
   </nav>
 
   <!-- HEADER -->

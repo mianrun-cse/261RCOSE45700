@@ -3,155 +3,167 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>📍 상권 인사이트 대시보드</title>
+  <title>무인매장 관제 — 상권 대시보드</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    :root {
+      --bg:      #111111;
+      --surface: #1a1a1a;
+      --surface2:#222222;
+      --border:  #2d2d2d;
+      --accent:  #4a8cf5;
+      --accent2: #50c8a4;
+      --danger:  #e05555;
+      --warning: #d49224;
+      --ok:      #42a875;
+      --text:    #e2e2e2;
+      --muted:   #5a5a5a;
+      --font:    'Inter', 'Noto Sans KR', system-ui, sans-serif;
+      --radius:  8px;
+    }
+
     body {
-      font-family: 'Segoe UI', 'Noto Sans KR', sans-serif;
-      background: #0f0f1a;
-      color: #e2e2f0;
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--text);
       min-height: 100vh;
+      font-size: 14px;
     }
 
     /* ── Top Nav ── */
     .topnav {
       position: fixed;
       top: 0; left: 0; right: 0;
-      height: 52px;
-      background: #16162a;
-      border-bottom: 1px solid #2a2a45;
+      height: 48px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
       display: flex;
       align-items: center;
-      padding: 0 24px;
-      gap: 16px;
+      padding: 0 20px;
+      gap: 14px;
       z-index: 200;
     }
 
     .topnav .logo {
-      font-size: 15px;
+      font-size: 13px;
       font-weight: 700;
-      color: #a78bfa;
-      margin-right: 16px;
+      color: var(--text);
+      margin-right: 12px;
+      letter-spacing: 0.02em;
     }
 
     .topnav a {
-      color: #888;
+      color: var(--muted);
       text-decoration: none;
-      font-size: 13px;
-      padding: 6px 14px;
-      border-radius: 8px;
-      transition: all 0.2s;
+      font-size: 12px;
+      padding: 5px 12px;
+      border-radius: 6px;
+      transition: all 0.15s;
     }
 
-    .topnav a:hover { background: #1e1e38; color: #fff; }
-    .topnav a.active { background: #6366f1; color: #fff; font-weight: 600; }
+    .topnav a:hover  { background: var(--surface2); color: var(--text); }
+    .topnav a.active { background: var(--accent); color: #fff; font-weight: 600; }
+    .topnav .spacer  { flex: 1; }
 
     /* ── Layout ── */
     .layout {
       display: flex;
-      margin-top: 52px;
-      min-height: calc(100vh - 52px);
+      margin-top: 48px;
+      min-height: calc(100vh - 48px);
     }
 
     /* ── Sidebar ── */
     .sidebar {
-      width: 220px;
-      min-height: 100%;
-      background: #16162a;
-      border-right: 1px solid #2a2a45;
-      padding: 20px 14px;
+      width: 210px;
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 18px 12px;
       position: fixed;
-      top: 52px;
-      left: 0;
-      bottom: 0;
+      top: 48px; left: 0; bottom: 0;
       overflow-y: auto;
     }
 
     .sidebar h2 {
-      font-size: 11px;
-      color: #555577;
-      letter-spacing: 1.5px;
+      font-size: 10px;
+      color: var(--muted);
+      letter-spacing: 1.2px;
       text-transform: uppercase;
-      margin-bottom: 14px;
+      margin-bottom: 12px;
     }
 
     .district-btn {
       background: transparent;
-      border: 1px solid #2a2a45;
-      color: #c4c4e0;
-      padding: 10px 14px;
-      border-radius: 8px;
+      border: 1px solid var(--border);
+      color: var(--text);
+      padding: 9px 12px;
+      border-radius: var(--radius);
       text-align: left;
       cursor: pointer;
       font-size: 13px;
-      margin-bottom: 6px;
-      transition: all 0.2s;
+      font-family: var(--font);
+      margin-bottom: 4px;
+      transition: all 0.15s;
       width: 100%;
     }
 
-    .district-btn:hover  { background: #1e1e38; border-color: #6366f1; color: #fff; }
-    .district-btn.active { background: #6366f1; border-color: #6366f1; color: #fff; font-weight: 700; }
+    .district-btn:hover  { background: var(--surface2); border-color: var(--accent); }
+    .district-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
 
     /* ── Main ── */
     .main {
-      margin-left: 220px;
-      padding: 28px 24px;
+      margin-left: 210px;
+      padding: 24px 22px;
       flex: 1;
     }
 
     /* ── Loading Overlay ── */
     #loading {
       display: none;
-      position: fixed;
-      inset: 0;
-      background: rgba(15,15,26,0.88);
+      position: fixed; inset: 0;
+      background: rgba(17,17,17,0.85);
       z-index: 999;
-      align-items: center;
-      justify-content: center;
-      flex-direction: column;
-      gap: 14px;
+      align-items: center; justify-content: center;
+      flex-direction: column; gap: 14px;
     }
 
     #loading.show { display: flex; }
 
     .spinner {
-      width: 46px; height: 46px;
-      border: 4px solid #2a2a45;
-      border-top-color: #6366f1;
+      width: 40px; height: 40px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
       border-radius: 50%;
-      animation: spin 0.75s linear infinite;
+      animation: spin 0.7s linear infinite;
     }
 
     @keyframes spin { to { transform: rotate(360deg); } }
 
     /* ── Welcome ── */
     #welcome {
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 75vh;
-      gap: 14px;
-      color: #555577;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      height: 72vh; gap: 12px; color: var(--muted);
     }
 
-    #welcome .icon { font-size: 60px; }
-    #welcome h1 { font-size: 22px; color: #7c7ca0; }
+    #welcome .icon { font-size: 48px; opacity: 0.4; }
+    #welcome h1 { font-size: 20px; color: var(--text); font-weight: 600; }
     #welcome p  { font-size: 13px; }
 
     /* ── Dashboard ── */
     #dashboard { display: none; }
 
-    /* ── Profile Header Card ── */
+    /* ── Profile Header ── */
     .profile-header {
-      background: linear-gradient(135deg, #1e1e38 0%, #16162a 100%);
-      border: 1px solid #2a2a45;
-      border-radius: 14px;
-      padding: 22px 26px;
-      margin-bottom: 20px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 24px;
+      margin-bottom: 16px;
       display: flex;
       align-items: center;
       justify-content: space-between;
@@ -159,36 +171,34 @@
       gap: 14px;
     }
 
-    .profile-header h1 { font-size: 24px; color: #a78bfa; font-weight: 700; }
-    .profile-header .meta { font-size: 12px; color: #777; margin-top: 4px; }
+    .profile-header h1 { font-size: 22px; color: var(--text); font-weight: 700; }
+    .profile-header .meta { font-size: 12px; color: var(--muted); margin-top: 4px; }
 
     .stat-pills { display: flex; gap: 10px; flex-wrap: wrap; }
 
     .stat-pill {
-      background: #0f0f1a;
-      border: 1px solid #2a2a45;
-      border-radius: 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
       padding: 10px 18px;
       text-align: center;
-      min-width: 110px;
+      min-width: 100px;
     }
 
-    .stat-pill .val { font-size: 20px; font-weight: 700; color: #a78bfa; }
-    .stat-pill .lbl { font-size: 11px; color: #555; margin-top: 2px; }
+    .stat-pill .val { font-size: 18px; font-weight: 700; color: var(--accent); }
+    .stat-pill .lbl { font-size: 11px; color: var(--muted); margin-top: 2px; }
 
     /* ── Grids ── */
     .grid-3 {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 16px;
-      margin-bottom: 16px;
+      gap: 14px; margin-bottom: 14px;
     }
 
     .grid-2 {
       display: grid;
       grid-template-columns: repeat(2, 1fr);
-      gap: 16px;
-      margin-bottom: 16px;
+      gap: 14px; margin-bottom: 14px;
     }
 
     @media (max-width: 1100px) { .grid-3 { grid-template-columns: 1fr 1fr; } }
@@ -196,67 +206,68 @@
 
     /* ── Card ── */
     .card {
-      background: #16162a;
-      border: 1px solid #2a2a45;
-      border-radius: 14px;
-      padding: 18px;
-      margin-bottom: 16px;
-    }
-
-    .card h3 {
-      font-size: 12px;
-      color: #a78bfa;
-      letter-spacing: 1px;
-      text-transform: uppercase;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
       margin-bottom: 14px;
     }
 
+    .card h3 {
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      margin-bottom: 14px;
+      font-weight: 600;
+    }
+
     /* ── Chart wrapper ── */
-    .chart-wrap { position: relative; height: 210px; }
+    .chart-wrap { position: relative; height: 200px; }
 
     /* ── Tags ── */
     .tag-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
 
     .peak-tag {
-      background: linear-gradient(135deg, #6366f1, #8b5cf6);
+      background: var(--accent);
       color: #fff;
-      padding: 7px 18px;
+      padding: 6px 16px;
       border-radius: 20px;
-      font-size: 13px;
+      font-size: 12px;
       font-weight: 600;
     }
 
     .store-tag {
-      background: #1e1e38;
-      border: 1px solid #6366f1;
-      color: #a78bfa;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
       padding: 6px 14px;
       border-radius: 20px;
-      font-size: 13px;
+      font-size: 12px;
     }
 
     /* ── Insight items ── */
     .summary-box {
-      background: #1e1e38;
-      border-left: 4px solid #a78bfa;
-      border-radius: 0 8px 8px 0;
+      background: var(--surface2);
+      border-left: 3px solid var(--accent);
+      border-radius: 0 var(--radius) var(--radius) 0;
       padding: 12px 16px;
       font-size: 13px;
       line-height: 1.7;
-      color: #ccc;
+      color: var(--text);
       margin-bottom: 14px;
     }
 
     .insight-item {
-      border-left: 4px solid #ccc;
-      background: #1e1e38;
-      border-radius: 0 8px 8px 0;
+      border-left: 3px solid var(--border);
+      background: var(--surface2);
+      border-radius: 0 var(--radius) var(--radius) 0;
       padding: 10px 14px;
       margin-bottom: 8px;
     }
 
     .insight-badge {
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 700;
       padding: 2px 8px;
       border-radius: 10px;
@@ -264,38 +275,38 @@
       margin-bottom: 5px;
     }
 
-    .insight-item p { font-size: 13px; line-height: 1.6; color: #bbb; }
+    .insight-item p { font-size: 13px; line-height: 1.6; color: #aaa; }
 
     /* ── Product Cards ── */
     .store-fit-box {
-      background: #1e1e38;
-      border-left: 4px solid #10b981;
-      border-radius: 0 8px 8px 0;
+      background: var(--surface2);
+      border-left: 3px solid var(--ok);
+      border-radius: 0 var(--radius) var(--radius) 0;
       padding: 12px 16px;
       font-size: 13px;
       line-height: 1.7;
-      color: #ccc;
+      color: var(--text);
       margin-bottom: 14px;
     }
 
     .products-grid {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
       gap: 12px;
     }
 
     .product-card {
-      background: #0f0f1a;
-      border-radius: 12px;
+      background: var(--surface2);
+      border-radius: var(--radius);
       padding: 14px;
-      border-top: 3px solid #ccc;
-      transition: transform 0.18s, box-shadow 0.18s;
+      border-top: 2px solid var(--border);
+      transition: border-color 0.15s, transform 0.15s;
       cursor: default;
     }
 
     .product-card:hover {
-      transform: translateY(-3px);
-      box-shadow: 0 6px 24px rgba(99,102,241,0.15);
+      transform: translateY(-2px);
+      border-top-color: var(--accent);
     }
 
     .p-header {
@@ -306,10 +317,10 @@
       margin-bottom: 7px;
     }
 
-    .p-name { font-size: 13px; font-weight: 700; color: #e2e2f0; }
+    .p-name { font-size: 13px; font-weight: 700; color: var(--text); }
 
     .demand-badge {
-      font-size: 11px;
+      font-size: 10px;
       font-weight: 700;
       padding: 3px 9px;
       border-radius: 10px;
@@ -317,7 +328,7 @@
       color: #fff;
     }
 
-    .p-meta { font-size: 11px; color: #555; margin-bottom: 7px; }
+    .p-meta { font-size: 11px; color: var(--muted); margin-bottom: 7px; }
     .p-rationale { font-size: 12px; color: #999; line-height: 1.5; }
 
     /* ── Error toast ── */
@@ -325,32 +336,36 @@
       display: none;
       position: fixed;
       bottom: 24px; right: 24px;
-      background: #ef4444;
+      background: var(--danger);
       color: #fff;
       padding: 12px 20px;
-      border-radius: 10px;
+      border-radius: var(--radius);
       font-size: 13px;
       z-index: 9999;
       max-width: 340px;
     }
+
+    * { scrollbar-width: thin; scrollbar-color: var(--border) transparent; }
+    *::-webkit-scrollbar { width: 4px; }
+    *::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
   </style>
 </head>
 <body>
 
 <!-- Top Nav -->
 <nav class="topnav">
-  <span class="logo">🏙️ 무인매장 AI</span>
-  <a href="/">🤖 에이전트 흐름</a>
-  <a href="/dashboard">📍 상권 대시보드</a>
-  <a href="/store" class="active">🏪 매장 시뮬레이션</a>
+  <span class="logo">무인매장 관제</span>
+  <a href="/">에이전트 흐름</a>
+  <a href="/dashboard" class="active">상권 대시보드</a>
+  <a href="/store">매장 시뮬레이션</a>
   <span class="spacer"></span>
-  <span id="clock" style="font-size:12px;color:#555;"></span>
+  <span id="clock" style="font-size:12px;color:var(--muted);"></span>
 </nav>
 
 <!-- Loading -->
 <div id="loading">
   <div class="spinner"></div>
-  <span style="color:#a78bfa;font-size:14px;">인사이트 분석 중...</span>
+  <span style="color:var(--muted);font-size:13px;">인사이트 분석 중...</span>
 </div>
 
 <!-- Error Toast -->
@@ -431,18 +446,18 @@
 
 <script>
   // ── Palettes ──
-  const PALETTE = ["#6366f1","#8b5cf6","#ec4899","#f59e0b","#10b981","#3b82f6","#f43f5e","#14b8a6"];
+  const PALETTE = ["#4a8cf5","#50c8a4","#d49224","#e05555","#42a875","#7b6ef5","#e07850","#50b8c8"];
 
   const DEMAND = {
-    high:     { bg: "#ef4444", label: "🔴 HIGH" },
-    moderate: { bg: "#f59e0b", label: "🟡 MODERATE" },
-    steady:   { bg: "#10b981", label: "🟢 STEADY" },
+    high:     { bg: "#e05555", label: "HIGH" },
+    moderate: { bg: "#d49224", label: "MODERATE" },
+    steady:   { bg: "#42a875", label: "STEADY" },
   };
 
   const CONF = {
-    high:   { border: "#10b981", badge: "#10b98122", text: "#10b981" },
-    medium: { border: "#f59e0b", badge: "#f59e0b22", text: "#f59e0b" },
-    low:    { border: "#ef4444", badge: "#ef444422", text: "#ef4444" },
+    high:   { border: "#42a875", badge: "rgba(66,168,117,0.12)",  text: "#42a875" },
+    medium: { border: "#d49224", badge: "rgba(212,146,36,0.12)",  text: "#d49224" },
+    low:    { border: "#e05555", badge: "rgba(224,85,85,0.12)",   text: "#e05555" },
   };
 
   // ── Chart instances ──
@@ -574,8 +589,8 @@
       options: {
         ...chartDefaults,
         scales: {
-          x: { ticks: { color: "#888" }, grid: { color: "#1e1e38" } },
-          y: { ticks: { color: "#888", callback: v => v + "%" }, grid: { color: "#1e1e38" } },
+          x: { ticks: { color: "#666" }, grid: { color: "#2d2d2d" } },
+          y: { ticks: { color: "#666", callback: v => v + "%" }, grid: { color: "#2d2d2d" } },
         }
       }
     });
@@ -590,7 +605,7 @@
           data: Object.values(family).map(v => (v * 100).toFixed(1)),
           backgroundColor: PALETTE,
           borderWidth: 2,
-          borderColor: "#16162a",
+          borderColor: "#1a1a1a",
         }]
       },
       options: {
@@ -599,7 +614,7 @@
           legend: {
             display: true,
             position: "bottom",
-            labels: { color: "#777", font: { size: 10 }, boxWidth: 10, padding: 6 },
+            labels: { color: "#666", font: { size: 10 }, boxWidth: 10, padding: 6 },
           }
         }
       }
@@ -614,7 +629,7 @@
         datasets: [{
           label: "비율 (%)",
           data: occs.map(o => ((o.ratio || 0) * 100).toFixed(1)),
-          backgroundColor: "#6366f1",
+          backgroundColor: "#4a8cf5",
           borderRadius: 6,
         }]
       },
@@ -622,8 +637,8 @@
         ...chartDefaults,
         indexAxis: "y",
         scales: {
-          x: { ticks: { color: "#888", callback: v => v + "%" }, grid: { color: "#1e1e38" } },
-          y: { ticks: { color: "#ccc", font: { size: 11 } }, grid: { display: false } },
+          x: { ticks: { color: "#666", callback: v => v + "%" }, grid: { color: "#2d2d2d" } },
+          y: { ticks: { color: "#bbb", font: { size: 11 } }, grid: { display: false } },
         }
       }
     });
@@ -664,7 +679,7 @@
 
     document.getElementById("products-grid").innerHTML =
       (recommendations?.products || []).map(p => {
-        const d = DEMAND[p.demand] || { bg: "#6366f1", label: p.demand };
+        const d = DEMAND[p.demand] || { bg: "#4a8cf5", label: p.demand };
         return `
           <div class="product-card" style="border-top-color:${d.bg};">
             <div class="p-header">
