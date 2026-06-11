@@ -16,6 +16,7 @@ from typing import Union
 
 import cv2
 import numpy as np
+from PIL import Image, ImageDraw, ImageFont
 import mediapipe as mp
 from mediapipe.tasks import python as mp_python
 from mediapipe.tasks.python import vision as mp_vision
@@ -28,6 +29,40 @@ MODEL_PATH       = os.path.join(OPENCV_DIR, 'hand_landmarker.task')
 POSE_MODEL_PATH  = os.path.join(OPENCV_DIR, 'pose_landmarker_lite.task')
 FACE_MODEL_PATH  = os.path.join(OPENCV_DIR, 'blaze_face_short_range.tflite')
 DANGER_SCREENSHOT_DIR = 'danger_screenshots'
+
+# 한글 텍스트 렌더링 — cv2.putText는 ASCII Hershey 폰트만 지원해 한글이 깨지므로 PIL로 그린다.
+KOREAN_FONT_PATH = os.getenv("KOREAN_FONT", "C:/Windows/Fonts/malgun.ttf")
+_font_cache: dict[int, "ImageFont.FreeTypeFont"] = {}
+
+
+def _get_font(size: int) -> "ImageFont.FreeTypeFont":
+    if size not in _font_cache:
+        try:
+            _font_cache[size] = ImageFont.truetype(KOREAN_FONT_PATH, size)
+        except OSError:
+            _font_cache[size] = ImageFont.load_default()
+    return _font_cache[size]
+
+
+def put_text_kr(img, text, org, size=22, color=(0, 255, 0)):
+    """cv2.putText의 한글 지원 대체. img를 in-place 수정한다. color는 BGR(OpenCV 관례)."""
+    pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    ImageDraw.Draw(pil).text(org, text, font=_get_font(size), fill=(color[2], color[1], color[0]))
+    img[:] = cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)
+
+
+def put_multiline_kr(img, text, org, size=20, color=(255, 255, 255), max_chars=34, line_gap=6):
+    """긴 한글 문장을 글자 수 기준으로 줄바꿈하여 그린다. (PIL 변환 1회로 처리)"""
+    x, y = org
+    font = _get_font(size)
+    lines = [text[i:i + max_chars] for i in range(0, len(text), max_chars)] or [""]
+    pil = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
+    draw = ImageDraw.Draw(pil)
+    fill = (color[2], color[1], color[0])
+    for line in lines:
+        draw.text((x, y), line, font=font, fill=fill)
+        y += size + line_gap
+    img[:] = cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)
 
 FRAME_SIZE                 = (640, 360)
 OCCLUSION_TRIGGER_FRAMES   = 10
@@ -436,7 +471,7 @@ def _run_detection_loop(
     _loop_start_ms     = int(time.time() * 1000)
 
     sway_detector  = BodySwayDetector()
-    danger_state   = {'pending': False}
+    danger_state   = {'pending': False, 'last_result': '', 'result_until': 0.0}
 
     def _on_danger_complete(result: str):
         print(f"\n{'=' * 52}")
@@ -445,6 +480,9 @@ def _run_detection_loop(
         print(result)
         print('=' * 52 + '\n')
         danger_state['pending'] = False
+        # 화면 표시용: 결과를 저장하고 10초간 노출
+        danger_state['last_result'] = result
+        danger_state['result_until'] = time.time() + 10.0
 
     debug      = os.getenv("DEBUG_CAMERA", "1") == "1"
     trace_data = os.getenv("TRACE_CAMERA_DATA", "1") == "1"
@@ -578,6 +616,13 @@ def _run_detection_loop(
                     n = len(sway_detector.capture_frames)
                     cv2.putText(display, f"! CAPTURING {n}/{SWAY_CAPTURE_COUNT}",
                                 (10, 185), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+
+                # AI 위험분석 결과 (한글) — 완료 후 일정 시간 화면 하단에 표시
+                if danger_state['last_result'] and now < danger_state['result_until']:
+                    put_multiline_kr(
+                        display, f"[AI] {danger_state['last_result']}",
+                        (10, h_img - 90), size=18, color=(0, 255, 255), max_chars=46,
+                    )
 
                 cv2.imshow(f"Bridge - {zone_id}", display)
                 if cv2.waitKey(1) & 0xFF == ord('q'):
