@@ -14,3 +14,6 @@ soundfile>=0.12.1
 # 웹 시각화 (web/app.py) — 데모용. 운영 환경에는 미설치해도 무방
 fastapi>=0.110.0
 uvicorn>=0.27.0
+# 인사이트 엔진 시뮬레이션 데이터 — test_insight.py --nemotron (nvidia/Nemotron-Personas-Korea 스트리밍).
+# 미설치 시 SAMPLE_PROFILES(사전 집계 샘플)로 동작하며 --nemotron만 비활성.
+datasets>=2.19.0
