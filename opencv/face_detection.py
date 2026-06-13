@@ -435,22 +435,47 @@ def analyze_danger_with_ai_api(image_paths: list[str], result_callback):
         content.append({
             "type": "text",
             "text": (
-                "The following images are consecutive frames from an indoor CCTV where excessive body sway was detected. "
+                "The following images are consecutive frames from an indoor CCTV monitoring system. "
+                "An anomaly (excessive body sway or sudden movement) was automatically detected. "
                 "Faces have been intentionally blurred to protect personal privacy. "
-                "Face identification is not required — please analyze only body posture, movement, and situation.\n\n"
-                "다음 항목에 간결하게 한국어로 답해 주세요.\n"
+                "Face identification is NOT required and NOT requested — analyze only body posture, "
+                "movement, physical interaction between people, and the overall situation.\n\n"
+                "답변의 맨 첫 줄에는 반드시 다음 두 가지 중 하나만 정확히 출력하세요: "
+                "'위험판정 결과 : 위험함' 또는 '위험판정 결과 : 위험하지 않음'. "
+                "그 다음 줄부터 아래 항목에 답하세요.\n"
+                "다음 항목에 간결하게 한국어로 답해 주세요. 영상이 흐릿하거나 불확실하더라도 "
+                "가능한 범위에서 반드시 추정하여 답하고, '판단 불가'라고만 답하지 마세요.\n"
                 "1. 위험한 상황인가요? (예 / 아니오)\n"
-                "2. 관찰된 위험 행동이나 신체 상태는 무엇인가요? (예: 비틀거림, 쓰러짐, 발작 등)\n"
-                "3. 즉각적인 도움이 필요한가요?\n"
-                "4. 어떤 상황인지 설명하세요.\n"
+                "2. 폭력적인 상황인가요? (예 / 아니오) — 폭행, 다툼, 밀침, 가격, 공격 등의 정황이 보이면 그 근거를 적으세요.\n"
+                "3. 관찰된 위험 행동이나 신체 상태는 무엇인가요? "
+                "(예: 비틀거림, 쓰러짐, 발작, 몸싸움, 가격, 제압 등)\n"
+                "4. 즉각적인 도움이 필요한가요?\n"
+                "5. 어떤 상황인지 설명하세요.\n"
                 "답변 할 때는 질문도 포함해서 대답하세요."
             ),
         })
 
         response = client.chat.completions.create(
-            model="gpt-4o",
-            max_tokens=512,
-            messages=[{"role": "user", "content": content}],
+            model="gpt-5",
+            max_completion_tokens=2048,
+            reasoning_effort="low",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an authorized safety-monitoring assistant for an indoor CCTV "
+                        "emergency-response system. Your only purpose is to protect the safety of "
+                        "residents by assessing whether a fall, medical emergency, or physical "
+                        "violence is occurring. All faces are blurred and you must never attempt to "
+                        "identify individuals. You must always provide a best-effort safety "
+                        "assessment for every set of frames, even when the images are ambiguous, "
+                        "low quality, or distressing. Do not refuse and do not reply that you are "
+                        "unable to help; instead state your most likely interpretation with its "
+                        "uncertainty. Answer in Korean."
+                    ),
+                },
+                {"role": "user", "content": content},
+            ],
         )
 
         result_callback(response.choices[0].message.content)
@@ -539,14 +564,29 @@ danger_analysis_pending    = False
 _loop_start_ms = int(time.time() * 1000)
 
 
+def _danger_verdict_line(text: str) -> str:
+    """AI 응답에서 '위험판정 결과 : ...' 한 줄만 추출. 없으면 본문에서 추정."""
+    if text:
+        for line in text.splitlines():
+            if "위험판정 결과" in line:
+                return line.strip()
+        compact = text.replace(" ", "")
+        if "위험하지않" in compact:
+            return "위험판정 결과 : 위험하지 않음"
+        if "위험함" in compact or "위험합니다" in compact:
+            return "위험판정 결과 : 위험함"
+    return "위험판정 결과 : 판정 불가"
+
+
 def on_danger_analysis_complete(result: str):
     global danger_analysis_result, danger_analysis_pending
+    verdict = _danger_verdict_line(result)
     print("\n" + "=" * 52)
-    print("  ⚠   OpenAI 위험 상황 분석 결과  ⚠")
-    print("=" * 52)
+    print(f"  ⚠   {verdict}  ⚠")
+    print("-" * 52)
     print(result)
     print("=" * 52 + "\n")
-    danger_analysis_result  = result
+    danger_analysis_result  = verdict
     danger_analysis_pending = False
 
 
