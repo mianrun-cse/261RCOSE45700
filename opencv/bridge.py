@@ -12,6 +12,7 @@ import asyncio
 import base64
 import threading
 import time
+from collections import deque
 from typing import Union
 
 import cv2
@@ -28,6 +29,7 @@ OPENCV_DIR  = os.path.dirname(os.path.abspath(__file__))
 MODEL_PATH       = os.path.join(OPENCV_DIR, 'hand_landmarker.task')
 POSE_MODEL_PATH  = os.path.join(OPENCV_DIR, 'pose_landmarker_lite.task')
 FACE_MODEL_PATH  = os.path.join(OPENCV_DIR, 'blaze_face_short_range.tflite')
+FACE_LANDMARKER_PATH = os.path.join(OPENCV_DIR, 'face_landmarker.task')
 DANGER_SCREENSHOT_DIR = 'danger_screenshots'
 
 # 한글 텍스트 렌더링 — cv2.putText는 ASCII Hershey 폰트만 지원해 한글이 깨지므로 PIL로 그린다.
@@ -85,6 +87,18 @@ _HAND_WRIST             = 0
 HAND_SHAKE_WINDOW_FRAMES  = 8
 HAND_SHAKE_THRESHOLD      = 40   # px — 손 중심이 이 이상 흔들리면 감지
 HAND_SHAKE_TRIGGER_FRAMES = 3
+
+# 입 모양(립 무브먼트) 감지 → 대화 트리거
+#   MAR(Mouth Aspect Ratio) = 입 세로열림 / 가로폭. 말할 때 MAR이 진동하므로
+#   윈도우 내 표준편차가 임계값을 넘으면 "말하는 중"으로 판정한다.
+MOUTH_WINDOW_FRAMES       = 12
+MOUTH_OPEN_STD_THRESHOLD  = 0.030  # MAR 표준편차 임계 — 낮추면 민감, 높이면 둔감
+MOUTH_TALK_TRIGGER_FRAMES = 5      # 연속 N프레임 진동하면 대화 시작
+
+# 음성 대화 루프
+CONVERSATION_RECORD_SEC   = 5.0    # 한 턴당 녹음 길이
+CONVERSATION_MAX_TURNS    = 6      # 한 세션 최대 대화 턴
+CONVERSATION_COOLDOWN_SEC = 20.0   # 대화 종료 후 재트리거 금지 시간
 
 os.makedirs(DANGER_SCREENSHOT_DIR, exist_ok=True)
 
@@ -317,22 +331,47 @@ def analyze_danger_with_ai_api(image_paths: list[str], result_callback):
         content.append({
             "type": "text",
             "text": (
-                "The following images are consecutive frames from an indoor CCTV where excessive body sway was detected. "
+                "The following images are consecutive frames from an indoor CCTV monitoring system. "
+                "An anomaly (excessive body sway or sudden movement) was automatically detected. "
                 "Faces have been intentionally blurred to protect personal privacy. "
-                "Face identification is not required — please analyze only body posture, movement, and situation.\n\n"
-                "다음 항목에 간결하게 한국어로 답해 주세요.\n"
+                "Face identification is NOT required and NOT requested — analyze only body posture, "
+                "movement, physical interaction between people, and the overall situation.\n\n"
+                "답변의 맨 첫 줄에는 반드시 다음 두 가지 중 하나만 정확히 출력하세요: "
+                "'위험판정 결과 : 위험함' 또는 '위험판정 결과 : 위험하지 않음'. "
+                "그 다음 줄부터 아래 항목에 답하세요.\n"
+                "다음 항목에 간결하게 한국어로 답해 주세요. 영상이 흐릿하거나 불확실하더라도 "
+                "가능한 범위에서 반드시 추정하여 답하고, '판단 불가'라고만 답하지 마세요.\n"
                 "1. 위험한 상황인가요? (예 / 아니오)\n"
-                "2. 관찰된 위험 행동이나 신체 상태는 무엇인가요? (예: 비틀거림, 쓰러짐, 발작 등)\n"
-                "3. 즉각적인 도움이 필요한가요?\n"
-                "4. 어떤 상황인지 설명하세요.\n"
+                "2. 폭력적인 상황인가요? (예 / 아니오) — 폭행, 다툼, 밀침, 가격, 공격 등의 정황이 보이면 그 근거를 적으세요.\n"
+                "3. 관찰된 위험 행동이나 신체 상태는 무엇인가요? "
+                "(예: 비틀거림, 쓰러짐, 발작, 몸싸움, 가격, 제압 등)\n"
+                "4. 즉각적인 도움이 필요한가요?\n"
+                "5. 어떤 상황인지 설명하세요.\n"
                 "답변 할 때는 질문도 포함해서 대답하세요."
             ),
         })
 
         response = client.chat.completions.create(
-            model="gpt-4o",
-            max_tokens=512,
-            messages=[{"role": "user", "content": content}],
+            model="gpt-5",
+            max_completion_tokens=2048,
+            reasoning_effort="low",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        "You are an authorized safety-monitoring assistant for an indoor CCTV "
+                        "emergency-response system. Your only purpose is to protect the safety of "
+                        "residents by assessing whether a fall, medical emergency, or physical "
+                        "violence is occurring. All faces are blurred and you must never attempt to "
+                        "identify individuals. You must always provide a best-effort safety "
+                        "assessment for every set of frames, even when the images are ambiguous, "
+                        "low quality, or distressing. Do not refuse and do not reply that you are "
+                        "unable to help; instead state your most likely interpretation with its "
+                        "uncertainty. Answer in Korean."
+                    ),
+                },
+                {"role": "user", "content": content},
+            ],
         )
         result_callback(response.choices[0].message.content)
 
@@ -379,6 +418,130 @@ def _hand_near_face(hand_results, face_region, frame_shape, margin_ratio=0.6) ->
 # ═══════════════════════════════════════════════════════════════
 #  메인 감지 루프
 # ═══════════════════════════════════════════════════════════════
+
+# ═══════════════════════════════════════════════════════════════
+#  입 모양(립 무브먼트) 감지 — 대화 시작 트리거
+# ═══════════════════════════════════════════════════════════════
+# MediaPipe FaceLandmarker(478 landmark)의 입술 랜드마크 기준
+_LIP_TOP    = 13    # 윗입술 안쪽 중앙
+_LIP_BOTTOM = 14    # 아랫입술 안쪽 중앙
+_LIP_LEFT   = 78    # 입꼬리 좌
+_LIP_RIGHT  = 308   # 입꼬리 우
+
+
+class MouthMovementDetector:
+    """
+    얼굴 랜드마크에서 입 벌림 비율(MAR)을 추적해 '말하는 중'인지 판정한다.
+    말할 때는 MAR이 빠르게 진동(개폐)하므로, 최근 윈도우의 표준편차가
+    임계값을 넘는 프레임이 연속으로 누적되면 talking=True 를 반환한다.
+    """
+
+    def __init__(self):
+        self.mar_window      = deque(maxlen=MOUTH_WINDOW_FRAMES)
+        self.talk_consecutive = 0
+        self.last_mar        = 0.0
+        self.last_std        = 0.0
+
+    def update(self, face_landmarker_result) -> bool:
+        landmarks = getattr(face_landmarker_result, "face_landmarks", None)
+        if not landmarks:
+            self.mar_window.clear()
+            self.talk_consecutive = 0
+            self.last_std = 0.0
+            return False
+
+        lm     = landmarks[0]
+        vert   = abs(lm[_LIP_TOP].y - lm[_LIP_BOTTOM].y)
+        horiz  = abs(lm[_LIP_LEFT].x - lm[_LIP_RIGHT].x) or 1e-6
+        mar    = vert / horiz
+        self.last_mar = mar
+        self.mar_window.append(mar)
+
+        if len(self.mar_window) < self.mar_window.maxlen:
+            return False
+
+        std = float(np.std(self.mar_window))
+        self.last_std = std
+        if std >= MOUTH_OPEN_STD_THRESHOLD:
+            self.talk_consecutive += 1
+        else:
+            self.talk_consecutive = max(0, self.talk_consecutive - 1)
+
+        return self.talk_consecutive >= MOUTH_TALK_TRIGGER_FRAMES
+
+
+def _danger_verdict_line(text: str) -> str:
+    """AI 응답에서 '위험판정 결과 : ...' 한 줄만 추출. 없으면 본문에서 추정."""
+    if text:
+        for line in text.splitlines():
+            if "위험판정 결과" in line:
+                return line.strip()
+        compact = text.replace(" ", "")
+        if "위험하지않" in compact:
+            return "위험판정 결과 : 위험하지 않음"
+        if "위험함" in compact or "위험합니다" in compact:
+            return "위험판정 결과 : 위험함"
+    return "위험판정 결과 : 판정 불가"
+
+
+async def _run_conversation(zone_id: str, conv_state: dict) -> None:
+    """
+    입 모양 감지로 시작되는 음성 대화 루프 (메인 asyncio 루프에서 실행).
+    인사 → STT(Whisper) → customer_bot.respond → TTS 재생을, 무음이 나오거나
+    최대 턴에 도달할 때까지 반복한다. 종료 시 conv_state 를 정리한다.
+    """
+    try:
+        from llm_module.stt import record_and_transcribe, play_audio
+        from llm_module.customer_bot import respond
+    except ImportError as e:
+        print(f"[{zone_id}][CONV] 음성 모듈 import 실패: {e} → pip install sounddevice soundfile")
+        conv_state['active'] = False
+        conv_state['last_end'] = time.time()
+        return
+
+    context = {
+        "customer_name": "고객",
+        "visit_count": 1,
+        "current_temp": 25.0,
+        "remaining_min": 30,
+        "reserved_min": 60,
+    }
+
+    try:
+        # 인사말도 하드코딩하지 않고 OpenAI가 상황을 받아 직접 생성 (프롬프트로 위임)
+        try:
+            greet = await respond(
+                "고객이 다가와 말을 걸려고 합니다. 먼저 밝고 친절하게 인사하고, "
+                "무엇을 도와드릴지 자연스럽게 한 문장으로 물어보세요.",
+                zone_id, context, tts=True, all_zone_ids=[zone_id],
+            )
+            print(f"[{zone_id}][CONV] 봇(인사): {greet.get('message', '')}")
+            if greet.get("audio_path"):
+                await asyncio.to_thread(play_audio, greet["audio_path"])
+        except Exception as e:
+            print(f"[{zone_id}][CONV] 인사 생성 실패(무시): {e}")
+
+        for _ in range(CONVERSATION_MAX_TURNS):
+            text = await record_and_transcribe(seconds=CONVERSATION_RECORD_SEC)
+            if not text:
+                print(f"[{zone_id}][CONV] 무음 — 대화 종료")
+                break
+            print(f"[{zone_id}][CONV] 고객: {text}")
+
+            result = await respond(text, zone_id, context, tts=True, all_zone_ids=[zone_id])
+            msg = result.get("message", "")
+            print(f"[{zone_id}][CONV] 봇: {msg}")
+
+            audio_path = result.get("audio_path")
+            if audio_path:
+                await asyncio.to_thread(play_audio, audio_path)
+    except Exception as e:
+        print(f"[{zone_id}][CONV] 대화 오류: {e}")
+    finally:
+        conv_state['active']   = False
+        conv_state['last_end'] = time.time()
+        print(f"[{zone_id}][CONV] 세션 종료 (쿨다운 {CONVERSATION_COOLDOWN_SEC:.0f}초)")
+
 
 def _run_detection_loop(
     zone_id: str,
@@ -440,6 +603,23 @@ def _run_detection_loop(
     else:
         print(f"[{zone_id}][BRIDGE] {FACE_MODEL_PATH} 없음 → Haar Cascade 폴백, 모자이크 비활성화")
 
+    # FaceLandmarker VIDEO 모드 — 입 모양(립 무브먼트) 감지로 대화 트리거
+    face_landmarker_video = None
+    if os.path.exists(FACE_LANDMARKER_PATH):
+        face_landmarker_video = mp_vision.FaceLandmarker.create_from_options(
+            mp_vision.FaceLandmarkerOptions(
+                base_options=mp_python.BaseOptions(model_asset_path=FACE_LANDMARKER_PATH),
+                running_mode=mp_vision.RunningMode.VIDEO,
+                num_faces=1,
+                min_face_detection_confidence=0.5,
+                min_tracking_confidence=0.5,
+            )
+        )
+    else:
+        print(f"[{zone_id}][BRIDGE] {FACE_LANDMARKER_PATH} 없음 → 입 모양 대화 트리거 비활성화")
+        print(f"[{zone_id}][BRIDGE]   다운로드: https://storage.googleapis.com/mediapipe-models/"
+              "face_landmarker/face_landmarker/float16/latest/face_landmarker.task")
+
     face_cascade = cv2.CascadeClassifier(
         cv2.data.haarcascades + 'haarcascade_frontalface_default.xml'
     )
@@ -473,15 +653,19 @@ def _run_detection_loop(
     sway_detector  = BodySwayDetector()
     danger_state   = {'pending': False, 'last_result': '', 'result_until': 0.0}
 
+    mouth_detector = MouthMovementDetector()
+    conv_state     = {'active': False, 'last_end': 0.0}
+
     def _on_danger_complete(result: str):
+        verdict = _danger_verdict_line(result)
         print(f"\n{'=' * 52}")
-        print(f"  [{zone_id}] 위험 상황 분석 결과")
-        print('=' * 52)
+        print(f"  [{zone_id}] {verdict}")
+        print('-' * 52)
         print(result)
         print('=' * 52 + '\n')
         danger_state['pending'] = False
-        # 화면 표시용: 결과를 저장하고 10초간 노출
-        danger_state['last_result'] = result
+        # 화면 표시용: 간단한 판정 결과만 저장하고 10초간 노출
+        danger_state['last_result'] = verdict
         danger_state['result_until'] = time.time() + 10.0
 
     debug      = os.getenv("DEBUG_CAMERA", "1") == "1"
@@ -576,6 +760,23 @@ def _run_detection_loop(
                 except Exception as e:
                     print(f"[{zone_id}][DANGER] 처리 오류 (카메라 유지): {e}")
 
+            # 입 모양(립 무브먼트) 감지 → 대화 자동 시작
+            talking = False
+            if face_landmarker_video is not None:
+                try:
+                    fl_res  = face_landmarker_video.detect_for_video(mp_image, timestamp_ms)
+                    talking = mouth_detector.update(fl_res)
+                except Exception as e:
+                    print(f"[{zone_id}][CONV] 입 모양 감지 오류 (카메라 유지): {e}")
+
+            if (talking and not conv_state['active']
+                    and now - conv_state['last_end'] >= CONVERSATION_COOLDOWN_SEC):
+                conv_state['active'] = True
+                print(f"[{zone_id}][CONV] 입 모양 감지 — 대화 시작")
+                asyncio.run_coroutine_threadsafe(
+                    _run_conversation(zone_id, conv_state), loop
+                )
+
             # debug 시각화
             if debug:
                 h_img, w_img = frame.shape[:2]
@@ -616,6 +817,16 @@ def _run_detection_loop(
                     n = len(sway_detector.capture_frames)
                     cv2.putText(display, f"! CAPTURING {n}/{SWAY_CAPTURE_COUNT}",
                                 (10, 185), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+
+                if face_landmarker_video is not None:
+                    cv2.putText(
+                        display,
+                        f"mouth std:{mouth_detector.last_std:.3f} "
+                        f"[{mouth_detector.talk_consecutive}f] {'TALKING' if talking else ''}",
+                        (10, 210), cv2.FONT_HERSHEY_SIMPLEX, 0.55, (255, 180, 0), 1)
+                if conv_state['active']:
+                    cv2.putText(display, "CONVERSATION ACTIVE", (10, 235),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
 
                 # AI 위험분석 결과 (한글) — 완료 후 일정 시간 화면 하단에 표시
                 if danger_state['last_result'] and now < danger_state['result_until']:
@@ -679,6 +890,8 @@ def _run_detection_loop(
             face_detector_video.__exit__(None, None, None)
         if face_detector_image is not None:
             face_detector_image.__exit__(None, None, None)
+        if face_landmarker_video is not None:
+            face_landmarker_video.__exit__(None, None, None)
         if debug:
             cv2.destroyAllWindows()
         print(f"[{zone_id}][BRIDGE] Camera stopped")
