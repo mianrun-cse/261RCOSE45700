@@ -1,6 +1,8 @@
 openai>=1.30.0
 opencv-contrib-python>=4.9.0
 mediapipe>=0.10.0
+# 디버그 화면 한글 텍스트 렌더링 (cv2.putText는 한글 미지원 → PIL로 그린다)
+Pillow>=10.0.0
 httpx>=0.27.0
 aiosqlite>=0.20.0
 python-dotenv>=1.0.0
