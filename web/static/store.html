@@ -238,6 +238,26 @@
     .persona-info { flex: 1; min-width: 0; }
     .persona-name { font-weight: 600; color: var(--text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .persona-action { font-size: 11px; color: var(--muted); margin-top: 1px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .persona-zone  { font-size: 10px; color: var(--accent2); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .state-dot {
+      width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; margin-left: auto;
+    }
+    .state-dot.sitting  { background: var(--ok); }
+    .state-dot.walking  { background: var(--warning); }
+    .state-dot.leaving  { background: var(--danger); }
+
+    /* ── LOG FILTER TABS ── */
+    .log-filters {
+      display: flex; gap: 4px; padding: 6px 10px;
+      border-bottom: 1px solid var(--border); flex-shrink: 0;
+    }
+    .log-tab {
+      font-size: 10px; padding: 2px 8px; border-radius: 999px;
+      border: 1px solid var(--border); background: transparent;
+      color: var(--muted); cursor: pointer; transition: all 0.15s;
+    }
+    .log-tab:hover { border-color: #3a3a3a; color: var(--text); }
+    .log-tab.active { background: var(--accent); border-color: var(--accent); color: #fff; }
 
     /* ── EVENT + AGENT LOG ── */
     .log-area {
@@ -255,6 +275,34 @@
     .log-entry .warn   { color: var(--warning); }
     .log-entry .danger { color: var(--danger); }
     .log-entry .agent  { color: var(--accent); font-weight: 600; }
+
+    /* ── SIM TIME PROGRESS BAR ── */
+    .sim-progress-wrap {
+      height: 3px; background: var(--border); flex-shrink: 0;
+    }
+    .sim-progress-bar {
+      height: 100%; background: var(--accent); width: 0%;
+      transition: width 0.5s linear;
+    }
+
+    /* ── SEAT OCCUPANCY PANEL ── */
+    .seat-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 5px;
+      padding: 10px 12px; border-top: 1px solid var(--border); flex-shrink: 0;
+    }
+    .seat-chip {
+      font-size: 10px; padding: 4px 8px; border-radius: 6px;
+      border: 1px solid var(--border); color: var(--muted);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      transition: all 0.3s;
+    }
+    .seat-chip.occupied {
+      border-color: var(--accent); color: var(--text);
+      background: rgba(74,140,245,0.08);
+    }
+    .seat-chip.occupied .seat-who {
+      color: var(--accent2); margin-left: 3px;
+    }
 
     /* ── TEMPERATURE WIDGET ── */
     .temp-widget {
@@ -331,6 +379,10 @@
   <span class="spacer"></span>
   <span class="agent-chip" id="agentChip">Agent: Idle</span>
 </div>
+<!-- SIM TIME PROGRESS BAR -->
+<div class="sim-progress-wrap">
+  <div class="sim-progress-bar" id="simProgressBar"></div>
+</div>
 
 <!-- GRAPH FLOW BAR — live agent pipeline visualization -->
 <div class="graph-bar">
@@ -387,6 +439,12 @@
       <div class="panel-title"><span>⚡</span> 이벤트 / 에이전트 로그</div>
       <button class="export-btn" id="exportBtn" onclick="exportLog()">⬇ 내보내기</button>
     </div>
+    <div class="log-filters">
+      <button class="log-tab active" onclick="setLogFilter('all',this)">전체</button>
+      <button class="log-tab" onclick="setLogFilter('safety',this)">🚨 안전</button>
+      <button class="log-tab" onclick="setLogFilter('comfort',this)">😓 불편</button>
+      <button class="log-tab" onclick="setLogFilter('ai',this)">🤖 AI</button>
+    </div>
     <div class="log-area" id="logArea"></div>
 
   </aside>
@@ -405,6 +463,7 @@
     <div class="panel-section">
       <div class="section-label">⚙️ 시뮬레이션 설정</div>
       <select id="districtSelect"><option value="">상권 선택...</option></select>
+      <div id="nemotronStatus" style="font-size:10px;margin-top:4px;min-height:14px;"></div>
       <button class="btn btn-primary" id="startBtn" disabled onclick="startSim()">
         ▶ 시뮬레이션 시작
       </button>
@@ -442,8 +501,14 @@
       <div class="stat-mini"><div class="v" id="sTotal">0</div><div class="l">총방문</div></div>
       <div class="stat-mini"><div class="v" id="sActive">0</div><div class="l">현재</div></div>
       <div class="stat-mini"><div class="v" id="sOrders">0</div><div class="l">주문</div></div>
-      <div class="stat-mini"><div class="v" id="sAvgAge">—</div><div class="l">평균연령</div></div>
+      <div class="stat-mini"><div class="v" id="sSafety" style="color:var(--danger)">0</div><div class="l">안전알림</div></div>
     </div>
+
+    <!-- Seat occupancy -->
+    <div class="panel-header" style="padding:8px 12px 6px;">
+      <div class="panel-title" style="font-size:10px;">🪑 좌석 현황</div>
+    </div>
+    <div class="seat-grid" id="seatGrid"></div>
 
   </aside>
 </div>
@@ -475,13 +540,15 @@ let simSpeed        = 1;
 let simTime         = 8 * 60;
 let lastTs          = null;
 let lastRaf         = null;
-let spawnTimer      = 0;
-let totalVisits     = 0;
-let totalOrders     = 0;
-let districtProfile = null;
-let nameIdx         = 0;
-let bgCache         = null;
-let simRoomTemp     = 24.0;
+let spawnTimer        = 0;
+let totalVisits       = 0;
+let totalOrders       = 0;
+let totalSafetyEvents = 0;
+let districtProfile   = null;
+let nameIdx           = 0;
+let bgCache           = null;
+let simRoomTemp       = 24.0;
+let logFilter         = 'all';
 
 // ═══════════════════════════════════════════════════════════════
 //  CANVAS SETUP
@@ -805,17 +872,35 @@ function weightedPick(weights) {
 
 const _logStore = [];
 
+function _logCategory(html) {
+  if (html.includes('안전알림') || html.includes('⚠️안전') || html.includes('danger')) return 'safety';
+  if (html.includes('불편') || html.includes('warn')) return 'comfort';
+  if (html.includes('AI응답') || html.includes('서버확인') || html.includes('agent')) return 'ai';
+  return 'base';
+}
+
 function log(html) {
   const area = document.getElementById("logArea");
   const d    = document.createElement("div");
-  d.className = "log-entry";
-  d.innerHTML = `<span class="ts">${fmtTime(simTime)}</span>${html}`;
+  const cat  = _logCategory(html);
+  d.className    = "log-entry";
+  d.dataset.cat  = cat;
+  d.innerHTML    = `<span class="ts">${fmtTime(simTime)}</span>${html}`;
+  if (logFilter !== 'all' && logFilter !== cat) d.style.display = 'none';
   area.prepend(d);
   while (area.children.length > 120) area.removeChild(area.lastChild);
-  // Store plain-text version for export
   const plain = d.textContent || d.innerText || "";
   _logStore.unshift({ time: fmtTime(simTime), text: plain.replace(/^\s+|\s+$/g, "") });
   if (_logStore.length > 500) _logStore.pop();
+}
+
+function setLogFilter(cat, btn) {
+  logFilter = cat;
+  document.querySelectorAll('.log-tab').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('#logArea .log-entry').forEach(el => {
+    el.style.display = (cat === 'all' || el.dataset.cat === cat) ? '' : 'none';
+  });
 }
 
 function exportLog() {
@@ -843,16 +928,32 @@ function exportLog() {
   }, 1800);
 }
 
+const SEAT_LABELS = {
+  window_seat: "창가석", study_zone: "공부존",
+  table_2a: "2인석 A", table_2b: "2인석 B",
+  table_2c: "2인석 C", table_2d: "2인석 D",
+  sofa_lounge: "소파", group_table: "단체석",
+};
+
 function updateStats() {
   document.getElementById("sTotal").textContent   = totalVisits;
   document.getElementById("sActive").textContent  = personas.length;
   document.getElementById("sOrders").textContent  = totalOrders;
+  document.getElementById("sSafety").textContent  = totalSafetyEvents;
   document.getElementById("personaBadge").textContent = personas.length + "명";
-  if (personas.length > 0) {
-    const avg = Math.round(personas.reduce((s, p) => s + p.age, 0) / personas.length);
-    document.getElementById("sAvgAge").textContent = avg;
-  } else {
-    document.getElementById("sAvgAge").textContent = "—";
+
+  // Seat occupancy grid
+  const grid = document.getElementById("seatGrid");
+  if (grid) {
+    grid.innerHTML = SEAT_ZONES.map(id => {
+      const occupantId = seatOccupancy[id];
+      const p = occupantId ? personas.find(x => x.id === occupantId) : null;
+      const label = SEAT_LABELS[id] || id;
+      if (p) {
+        return `<div class="seat-chip occupied">${label}<span class="seat-who">${p.emoji}</span></div>`;
+      }
+      return `<div class="seat-chip">${label}</div>`;
+    }).join("");
   }
 }
 
@@ -862,7 +963,12 @@ function updatePersonaList() {
     el.innerHTML = '<div style="color:var(--muted);font-size:12px;text-align:center;margin-top:16px;">현재 카페 내 인원 없음</div>';
     return;
   }
-  el.innerHTML = personas.map(p => `
+  el.innerHTML = personas.map(p => {
+    const dotClass = p.state === 'leaving' ? 'leaving' : p.state === 'acting' ? 'sitting' : 'walking';
+    const zoneName = p.assignedSeat ? (SEAT_LABELS[p.assignedSeat] || p.assignedSeat)
+                   : p.currentStage?.zone ? (getZone(p.currentStage.zone)?.label || p.currentStage.zone)
+                   : null;
+    return `
     <div class="persona-item">
       <div class="persona-avatar-sm" style="background:${p.color}22;border:2px solid ${p.color};">
         ${p.emoji}
@@ -870,12 +976,14 @@ function updatePersonaList() {
       <div class="persona-info">
         <div class="persona-name">${p.name} (${p.age}세)</div>
         <div class="persona-action">
-          ${p.currentStage?.label ?? "이동 중"}
+          ${p.currentStage?.label ?? (p.state === 'leaving' ? '퇴장 중' : '이동 중')}
           ${p.actionLabel ? "— " + p.actionLabel : ""}
         </div>
+        ${zoneName ? `<div class="persona-zone">→ ${zoneName}</div>` : ""}
       </div>
-    </div>
-  `).join("");
+      <div class="state-dot ${dotClass}"></div>
+    </div>`;
+  }).join("");
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1055,8 +1163,8 @@ function buildBgCache() {
   oc.width = canvas.width; oc.height = canvas.height;
   const ox = oc.getContext("2d");
 
-  ox.fillStyle = "#1c1a28"; ox.fillRect(0, 0, oc.width, oc.height);
-  ox.strokeStyle = "#22203a"; ox.lineWidth = 0.5;
+  ox.fillStyle = "#111111"; ox.fillRect(0, 0, oc.width, oc.height);
+  ox.strokeStyle = "#1e1e1e"; ox.lineWidth = 0.5;
   for (let c = 0; c <= COLS; c++) {
     ox.beginPath(); ox.moveTo(c*TILE, 0); ox.lineTo(c*TILE, ROWS*TILE); ox.stroke();
   }
@@ -1416,7 +1524,21 @@ const SAFETY_EVENTS = [
 
 const personaEventTimers = {};
 
+function weightedPickEvent(events, weights) {
+  if (!weights) return events[Math.floor(Math.random() * events.length)];
+  const total = events.reduce((s, e) => s + (weights[e.id] ?? 1.0), 0);
+  let r = Math.random() * total;
+  for (const e of events) { r -= weights[e.id] ?? 1.0; if (r <= 0) return e; }
+  return events[events.length - 1];
+}
+
 function tickComfortSafety(dtSec) {
+  const evCfg         = FLOW_CONFIG?.event_config ?? {};
+  const comfortProb   = evCfg.comfort_event_prob ?? COMFORT_EVENT_PROB;
+  const safetyProb    = evCfg.safety_event_prob  ?? SAFETY_EVENT_PROB;
+  const comfortW      = evCfg.comfort_weights    ?? null;
+  const safetyW       = evCfg.safety_weights     ?? null;
+
   for (const p of personas) {
     if (!personaEventTimers[p.id]) {
       personaEventTimers[p.id] = {
@@ -1429,15 +1551,15 @@ function tickComfortSafety(dtSec) {
       t.comfortTimer -= dtSec * simSpeed;
       if (t.comfortTimer <= 0) {
         t.comfortTimer = COMFORT_CHECK_INTERVAL;
-        if (Math.random() < COMFORT_EVENT_PROB)
-          triggerComfortEvent(p, COMFORT_EVENTS[Math.floor(Math.random() * COMFORT_EVENTS.length)]);
+        if (Math.random() < comfortProb)
+          triggerComfortEvent(p, weightedPickEvent(COMFORT_EVENTS, comfortW));
       }
     }
     t.safetyTimer -= dtSec * simSpeed;
     if (t.safetyTimer <= 0) {
       t.safetyTimer = SAFETY_CHECK_INTERVAL;
-      if (Math.random() < SAFETY_EVENT_PROB)
-        triggerSafetyEvent(p, SAFETY_EVENTS[Math.floor(Math.random() * SAFETY_EVENTS.length)]);
+      if (Math.random() < safetyProb)
+        triggerSafetyEvent(p, weightedPickEvent(SAFETY_EVENTS, safetyW));
     }
   }
   for (const id of Object.keys(personaEventTimers))
@@ -1555,6 +1677,7 @@ function triggerComfortEvent(p, ev) {
 
 // ── Safety → safety_agent pipeline ─────────────────────────────
 function triggerSafetyEvent(p, ev) {
+  totalSafetyEvents++;
   p.speechBubble = ev.bubble; p.speechTimer = 8;
   const color   = ev.severity === "high" ? "#ff4747" : "#ffaa47";
   const zoneId  = p.assignedSeat || p.currentStage?.zone || "study_zone";
@@ -1609,6 +1732,10 @@ function loop(ts) {
   const dt = lastTs ? Math.min((ts - lastTs) / 1000, 0.1) : 0;
   lastTs = ts;
   simTime += dt * 4 * simSpeed;
+  // Progress bar: 08:00 (480 min) → 22:00 (1320 min)
+  const pct = Math.min(100, Math.max(0, (simTime - 480) / (1320 - 480) * 100));
+  const pb = document.getElementById("simProgressBar");
+  if (pb) pb.style.width = pct + "%";
 
   spawnTimer -= dt;
   if (spawnTimer <= 0 && personas.length < getMaxCapacity()) {
@@ -1651,8 +1778,10 @@ async function startSim() {
     return;
   }
 
-  personas = []; totalVisits = 0; totalOrders = 0;
+  personas = []; totalVisits = 0; totalOrders = 0; totalSafetyEvents = 0;
   simTime = 8 * 60; spawnTimer = 1.5;
+  const pb = document.getElementById("simProgressBar");
+  if (pb) pb.style.width = "0%";
   simRunning = true; nameIdx = 0;
   SEAT_ZONES.forEach(id => { seatOccupancy[id] = null; });
   bgCache = null; resetGraph();
@@ -1689,16 +1818,45 @@ function setSpeed(v) {
   document.getElementById("speedVal").textContent = v + "×";
 }
 
+let _nemotronPoller = null;
+
 async function loadDistricts() {
   try {
     const res  = await fetch("/districts");
     const data = await res.json();
     const sel  = document.getElementById("districtSelect");
+    const prev = sel.value;
+
+    // Rebuild options
+    sel.innerHTML = '<option value="">상권 선택...</option>';
     (data.districts || []).forEach(d => {
       const o = document.createElement("option");
       o.value = d; o.textContent = d; sel.appendChild(o);
     });
+    if (prev) sel.value = prev;
     sel.onchange = () => { document.getElementById("startBtn").disabled = !sel.value; };
+    if (sel.value) document.getElementById("startBtn").disabled = false;
+
+    const nem = data.nemotron || {};
+    const statusEl = document.getElementById("nemotronStatus");
+    if (nem.loading) {
+      statusEl.textContent = "⏳ Nemotron 데이터 로딩 중...";
+      statusEl.style.color = "var(--warning)";
+      if (!_nemotronPoller)
+        _nemotronPoller = setInterval(async () => {
+          const r = await fetch("/nemotron-status");
+          const d = await r.json();
+          if (!d.loading) { clearInterval(_nemotronPoller); _nemotronPoller = null; loadDistricts(); }
+        }, 5000);
+    } else if (nem.loaded) {
+      statusEl.textContent = `✅ Nemotron — ${nem.district_count}개 상권 로드됨`;
+      statusEl.style.color = "var(--ok)";
+    } else if (nem.error) {
+      statusEl.textContent = "⚠ Nemotron 로드 실패 (샘플 사용 중)";
+      statusEl.style.color = "var(--warning)";
+    } else {
+      statusEl.textContent = "";
+    }
   } catch(e) { console.error("Districts load failed", e); }
 }
 

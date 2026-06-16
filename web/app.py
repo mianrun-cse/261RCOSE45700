@@ -38,8 +38,13 @@ from db.models import init_db
 from llm_module.state import (
     make_customer_state, make_safety_state, make_report_state, make_insight_state,
 )
-from data_simulation import SAMPLE_PROFILES
+from data_simulation import SAMPLE_PROFILES, load_nemotron_profiles
+from llm_module.insight_schema import DistrictProfile
 from test_agent import install_actuator_mocks
+
+# ── 프로필 캐시 — 시작 시 SAMPLE_PROFILES로 초기화, Nemotron 로드 후 보강 ──────
+_profiles: dict[str, DistrictProfile] = dict(SAMPLE_PROFILES)
+_nemotron_status: dict = {"loading": False, "loaded": False, "error": None, "district_count": 0}
 
 ZONE_IDS = ["1번 구역", "2번 구역", "3번 구역"]
 
@@ -48,6 +53,23 @@ app = FastAPI(title="무인 매장 멀티에이전트 흐름")
 STATIC_DIR = Path(__file__).parent / "static"
 
 _started = False
+
+
+async def _load_nemotron_background() -> None:
+    """서버 시작 후 백그라운드에서 Nemotron 데이터셋을 스트리밍으로 로드."""
+    global _profiles
+    _nemotron_status["loading"] = True
+    try:
+        profiles = await asyncio.to_thread(load_nemotron_profiles, None, max_rows=150_000)
+        _profiles.update(profiles)   # Nemotron 결과가 하드코딩 샘플보다 우선
+        _nemotron_status["loaded"]        = True
+        _nemotron_status["district_count"] = len(profiles)
+        print(f"[Nemotron] ✅ {len(profiles)}개 상권 로드 완료: {list(profiles)[:8]}...")
+    except Exception as e:
+        _nemotron_status["error"] = str(e)
+        print(f"[Nemotron] ❌ 로드 실패 (SAMPLE_PROFILES 유지): {e}")
+    finally:
+        _nemotron_status["loading"] = False
 
 
 @app.on_event("startup")
@@ -59,6 +81,8 @@ async def _startup():
     install_actuator_mocks()
     _started = True
     print("[WEB] 시작 - actuator 모킹 완료, DB 초기화 완료")
+    asyncio.create_task(_load_nemotron_background())
+    print("[Nemotron] 백그라운드 로드 시작 (약 30~60초 소요)...")
 
 
 # ── Broadcast 채널 ────────────────────────────────────────────────────────────
@@ -176,7 +200,7 @@ def _report():
 
 
 def _insight():
-    return make_insight_state(district_profile=SAMPLE_PROFILES["서울-강남구"])
+    return make_insight_state(district_profile=_profiles["서울-강남구"])
 
 
 SCENARIOS = {
@@ -217,13 +241,13 @@ async def insight(req: InsightRequest):
     """
     profile = req.profile
     if profile is None:
-        if req.district and req.district in SAMPLE_PROFILES:
-            profile = SAMPLE_PROFILES[req.district]
+        if req.district and req.district in _profiles:
+            profile = _profiles[req.district]
         else:
             raise HTTPException(
                 400,
-                "profile 또는 SAMPLE_PROFILES에 존재하는 district가 필요합니다. "
-                f"사용 가능 district: {list(SAMPLE_PROFILES)}",
+                "profile 또는 로드된 district가 필요합니다. "
+                f"사용 가능 district: {list(_profiles)}",
             )
 
     from llm_module.graph import facility_graph
@@ -237,9 +261,14 @@ async def insight(req: InsightRequest):
         "recommendations": result.get("recommendations"),
     }
 
-@app.get("/districts")  
-async def get_districts():  
-    return {"districts": list(SAMPLE_PROFILES.keys())} 
+@app.get("/districts")
+async def get_districts():
+    return {"districts": sorted(_profiles.keys()), "nemotron": _nemotron_status}
+
+@app.get("/nemotron-status")
+async def nemotron_status():
+    return {"districts": sorted(_profiles.keys()), **_nemotron_status}
+
 
 @app.post("/trigger/{key}")
 async def trigger(key: str):
@@ -396,13 +425,13 @@ async def cafe_flow(req: CafeFlowRequest):
     """
     profile = req.profile
     if profile is None:
-        if req.district and req.district in SAMPLE_PROFILES:
-            profile = SAMPLE_PROFILES[req.district]
+        if req.district and req.district in _profiles:
+            profile = _profiles[req.district]
         else:
             raise HTTPException(
                 400,
-                f"profile 또는 SAMPLE_PROFILES에 존재하는 district 필요. "
-                f"사용 가능: {list(SAMPLE_PROFILES)}",
+                f"profile 또는 로드된 district 필요. "
+                f"사용 가능: {list(_profiles)}",
             )
 
     from llm_module.cafe_flow import generate_cafe_flow

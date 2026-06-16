@@ -284,6 +284,92 @@ def _patch_defaults(data: dict) -> dict:
 
 
 # ─────────────────────────────────────────────
+#  District-aware event configuration
+# ─────────────────────────────────────────────
+
+def _compute_event_config(profile: dict) -> dict:
+    """
+    상권 인구통계(DistrictProfile)에서 이벤트 가중치와 확률을 계산한다.
+
+    핵심 규칙:
+      - 고령 비율(50+) 높을수록 : 낙상/열탈진 위험 ↑, 와이파이/충전 불편 ↓
+      - 청년 비율(19-39) 높을수록: 와이파이·충전·소음·기물파손 ↑, 낙상 ↓
+      - 기술직/학생 비율 높을수록: 어두움·와이파이·충전 ↑↑
+    """
+    age_info     = profile.get("age", {})
+    cohorts      = age_info.get("cohorts", {})
+    senior_ratio = cohorts.get("65+", 0.10) + cohorts.get("50-64", 0.20)
+    youth_ratio  = cohorts.get("19-29", 0.20) + cohorts.get("30-39", 0.20)
+
+    occ_names = " ".join(o.get("name", "") for o in profile.get("top_occupations", []))
+    is_tech   = any(w in occ_names for w in ["소프트웨어", "개발자", "연구", "IT", "엔지니어"])
+    is_young_heavy = youth_ratio > 0.40
+
+    def w(*factors) -> float:
+        return round(max(0.1, sum(factors)), 2)
+
+    comfort_weights = {
+        # Temperature — universal
+        "too_hot":        1.0,
+        "too_cold":       1.0,
+        "stuffy":         0.8,
+        "hot_drink_warm": w(0.4, youth_ratio * 0.8),
+        "cold_draft":     w(0.4, senior_ratio * 1.2),
+        # Lighting — tech/study districts feel it more
+        "too_dark":       w(0.5, 1.5 if (is_tech or is_young_heavy) else 0.3),
+        "too_bright":     w(0.4, senior_ratio * 1.8),
+        # Noise — younger districts more noise-sensitive
+        "noisy":          w(0.2, youth_ratio * 2.0),
+        "music_low":      w(0.2, youth_ratio * 1.2),
+        # Service — dirty table bothers older customers more
+        "no_cups":        1.0,
+        "dirty_table":    w(0.4, senior_ratio * 2.0),
+        # Tech needs — strongly tied to youth + occupation
+        "wifi_slow":      w(0.3, (2.0 if is_tech else 0.6), youth_ratio * 1.0),
+        "outlet_needed":  w(0.2, (2.2 if is_tech else 0.4), youth_ratio * 1.2),
+    }
+
+    safety_weights = {
+        # Thermal distress — elderly more vulnerable
+        "sweat_wiping":       w(0.4, senior_ratio * 1.8),
+        "heat_exhaustion":    w(0.2, senior_ratio * 3.5),
+        # Theft — slightly higher where youth/students are prevalent
+        "theft_attempt":      1.0,
+        "kiosk_bypass":       w(0.4, youth_ratio * 1.2),
+        "multiple_items":     1.0,
+        # Property damage — younger demographics
+        "property_damage":    w(0.2, youth_ratio * 2.0),
+        "graffiti":           w(0.1, youth_ratio * 2.0),
+        "equipment_tamper":   w(0.2, youth_ratio * 1.5),
+        # Falls — core driver: elderly fall risk
+        "fall_emergency":     w(0.3, senior_ratio * 5.0),
+        "faint_suspected":    w(0.2, senior_ratio * 3.5),
+        "slip_fall":          w(0.4, senior_ratio * 2.5),
+        # Suspicious / harassment — universal
+        "suspicious_person":  1.0,
+        "loitering":          1.0,
+        "aggressive_behavior":1.0,
+        "harassment":         1.0,
+        "verbal_harassment":  1.0,
+    }
+
+    # Overall probability: younger → more comfort complaints; older → more safety incidents
+    comfort_prob = round(min(0.35, 0.12 + youth_ratio * 0.12), 3)
+    safety_prob  = round(min(0.15, 0.04 + senior_ratio * 0.10), 3)
+
+    return {
+        "comfort_event_prob": comfort_prob,
+        "safety_event_prob":  safety_prob,
+        "comfort_weights":    comfort_weights,
+        "safety_weights":     safety_weights,
+        # Metadata for UI display
+        "age_mean":           round(age_info.get("mean", 35.0), 1),
+        "senior_ratio":       round(senior_ratio, 2),
+        "youth_ratio":        round(youth_ratio, 2),
+    }
+
+
+# ─────────────────────────────────────────────
 #  Main entry point
 # ─────────────────────────────────────────────
 
@@ -317,7 +403,9 @@ Remember:
 
     except Exception as e:
         print(f"[cafe_flow] ❌ LLM call failed: {e}")
-        return _patch_defaults({})
+        result = _patch_defaults({})
+        result["event_config"] = _compute_event_config(profile)
+        return result
 
     # Strip markdown fences if LLM wraps anyway
     content = re.sub(r"^```(?:json)?\s*\n?", "", content, flags=re.MULTILINE)
@@ -333,4 +421,9 @@ Remember:
     print(f"[cafe_flow] ✅ Parsed {len(data.get('flow_stages', []))} stages, "
           f"{len(data.get('persona_types', []))} personas")
 
-    return _patch_defaults(data)
+    result = _patch_defaults(data)
+    result["event_config"] = _compute_event_config(profile)
+    print(f"[cafe_flow] 📊 event_config: comfort_prob={result['event_config']['comfort_event_prob']}, "
+          f"safety_prob={result['event_config']['safety_event_prob']}, "
+          f"senior={result['event_config']['senior_ratio']}, youth={result['event_config']['youth_ratio']}")
+    return result
