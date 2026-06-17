@@ -515,15 +515,11 @@
 
 <!-- SCENARIO PANEL — sits between pipeline bar and canvas -->
 <div class="scenario-panel" id="scenarioPanel">
-  <div class="sc-phase">
+  <div class="sc-phase" style="flex:1.4">
     <div class="sc-label sit">📋 상황 발생</div>
     <div class="sc-content" id="scSituation">—</div>
   </div>
-  <div class="sc-phase">
-    <div class="sc-label proc">⚙️ AI 에이전트 처리</div>
-    <div class="sc-agents" id="scAgents"></div>
-  </div>
-  <div class="sc-phase">
+  <div class="sc-phase" style="flex:1.6">
     <div class="sc-label res" id="scResultLabel">결과</div>
     <div class="sc-content" id="scResult" style="color:var(--muted)">—</div>
   </div>
@@ -1849,29 +1845,11 @@ function updateTempWidget(newTemp, zoneName, delta) {
 // ═══════════════════════════════════════════════════════════════
 let _scTimer = null;
 
-function openScenario(situationHtml, agentNames) {
+function openScenario(situationHtml) {
   document.getElementById('scSituation').innerHTML = situationHtml;
   document.getElementById('scResult').innerHTML = '<span style="color:var(--muted)">⏳ 처리 중...</span>';
   const lbl = document.getElementById('scResultLabel');
   lbl.textContent = '결과'; lbl.className = 'sc-label res';
-
-  const agentsEl = document.getElementById('scAgents');
-  agentsEl.innerHTML = '';
-  let delay = 0;
-  agentNames.forEach(name => {
-    if (name === '→') {
-      const arr = document.createElement('span');
-      arr.className = 'sc-arrow'; arr.textContent = '→';
-      agentsEl.appendChild(arr);
-    } else {
-      const chip = document.createElement('span');
-      chip.className = 'sc-agent'; chip.textContent = name;
-      agentsEl.appendChild(chip);
-      setTimeout(() => chip.classList.add('active'), delay);
-      delay += 700;
-    }
-  });
-
   if (_scTimer) clearTimeout(_scTimer);
   document.getElementById('scenarioPanel').classList.add('visible');
 }
@@ -1976,8 +1954,7 @@ function triggerComfortEvent(p, ev) {
   // Scenario panel
   openScenario(
     `${p.emoji} <b>${p.name}</b> (${p.age}세) · <span style="color:var(--accent2)">${zLabel}</span><br>
-     <span style="color:var(--warning)">"${ev.bubble}"</span>`,
-    ['Orchestrator', '→', 'Customer Agent', '→', 'Actuator']
+     <span style="color:var(--warning)">"${ev.bubble}"</span>`
   );
   // Structured log card
   const card = logCard(p, ev, ['Orchestrator', 'Customer Agent', 'Actuator'], 'comfort');
@@ -2051,8 +2028,7 @@ function triggerSafetyEvent(p, ev) {
   openScenario(
     `${p.emoji} <b>${p.name}</b> (${p.age}세) · <span style="color:var(--danger)">${zLabel}</span><br>
      <span style="color:${color};font-weight:700">${ev.bubble}</span>
-     <span style="color:var(--muted);font-size:10px;"> · 신뢰도 ${Math.round(ev.confidence * 100)}%</span>`,
-    agents
+     <span style="color:var(--muted);font-size:10px;"> · 신뢰도 ${Math.round(ev.confidence * 100)}%</span>`
   );
   const card = logCard(p, ev,
     isHigh ? ['Orchestrator', 'Safety Agent', '에스컬레이션', 'Actuator']
