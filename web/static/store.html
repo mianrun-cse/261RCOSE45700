@@ -397,6 +397,59 @@
     .stat-mini .v { font-size: 17px; font-weight: 700; color: var(--accent); }
     .stat-mini .l { font-size: 10px; color: var(--muted); margin-top: 1px; }
 
+    /* ── SCENARIO PANEL ── */
+    .scenario-panel {
+      display: none; background: var(--surface);
+      border-bottom: 2px solid var(--border);
+      padding: 10px 20px; gap: 0; flex-shrink: 0;
+      position: relative; animation: slideIn 0.25s ease;
+    }
+    .scenario-panel.visible { display: flex; }
+    .sc-phase { flex: 1; padding: 6px 16px; display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+    .sc-phase + .sc-phase { border-left: 1px solid var(--border); }
+    .sc-label {
+      font-size: 9px; text-transform: uppercase; letter-spacing: 0.12em;
+      font-weight: 700; color: var(--muted); margin-bottom: 2px;
+    }
+    .sc-label.sit  { color: var(--warning); }
+    .sc-label.proc { color: var(--accent); }
+    .sc-label.res  { color: var(--ok); }
+    .sc-label.res.danger { color: var(--danger); }
+    .sc-content { font-size: 12px; color: var(--text); line-height: 1.5; }
+    .sc-agents { display: flex; align-items: center; gap: 5px; flex-wrap: wrap; margin-top: 2px; }
+    .sc-agent {
+      padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border);
+      color: var(--muted); font-size: 10px; transition: all 0.35s;
+    }
+    .sc-agent.active { border-color: var(--accent); color: var(--accent); background: rgba(74,140,245,0.12); }
+    .sc-agent.done   { border-color: var(--ok); color: var(--ok); background: rgba(66,168,117,0.08); }
+    .sc-arrow { color: var(--border); font-size: 10px; }
+    .sc-close {
+      position: absolute; right: 10px; top: 8px;
+      background: none; border: none; color: var(--muted);
+      cursor: pointer; font-size: 14px; line-height: 1;
+    }
+    .sc-close:hover { color: var(--text); }
+
+    /* ── STRUCTURED EVENT CARDS ── */
+    .event-card {
+      margin-bottom: 7px; border: 1px solid var(--border);
+      border-radius: 6px; overflow: hidden; animation: slideIn 0.25s ease;
+      background: #0d0d0d;
+    }
+    .ec-row { display: flex; gap: 6px; padding: 4px 8px; align-items: baseline; font-size: 11px; line-height: 1.5; }
+    .ec-row + .ec-row { border-top: 1px solid #181818; }
+    .ec-tag {
+      font-size: 9px; text-transform: uppercase; letter-spacing: 0.06em;
+      font-weight: 700; flex-shrink: 0; width: 34px; padding-top: 1px;
+    }
+    .ec-tag.sit  { color: var(--warning); }
+    .ec-tag.proc { color: #555; }
+    .ec-tag.res  { color: var(--ok); }
+    .ec-tag.res.danger { color: var(--danger); }
+    .ec-ts { color: #2d2d2d; font-size: 9px; flex-shrink: 0; }
+    .ec-body { color: var(--text); flex: 1; min-width: 0; }
+
     /* ── ANIMATIONS ── */
     @keyframes pulse   { 0%,100%{opacity:1} 50%{opacity:0.3} }
     @keyframes slideIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
@@ -458,6 +511,23 @@
   </div>
   <span class="g-arrow">→</span>
   <div class="g-terminal" id="gnode-end">END</div>
+</div>
+
+<!-- SCENARIO PANEL — sits between pipeline bar and canvas -->
+<div class="scenario-panel" id="scenarioPanel">
+  <div class="sc-phase">
+    <div class="sc-label sit">📋 상황 발생</div>
+    <div class="sc-content" id="scSituation">—</div>
+  </div>
+  <div class="sc-phase">
+    <div class="sc-label proc">⚙️ AI 에이전트 처리</div>
+    <div class="sc-agents" id="scAgents"></div>
+  </div>
+  <div class="sc-phase">
+    <div class="sc-label res" id="scResultLabel">결과</div>
+    <div class="sc-content" id="scResult" style="color:var(--muted)">—</div>
+  </div>
+  <button class="sc-close" onclick="closeScenarioPanel()">✕</button>
 </div>
 
 <!-- MAIN LAYOUT -->
@@ -525,6 +595,10 @@
       </button>
       <button class="btn btn-danger" id="stopBtn" style="display:none" onclick="stopSim()">
         ■ 정지
+      </button>
+      <button class="btn" id="demoBtn" disabled onclick="runDemo()"
+        style="background:var(--surface2);color:var(--accent2);border-color:var(--accent2);margin-top:6px;">
+        🎬 데모 시나리오
       </button>
       <div class="speed-row">
         <label>시뮬 속도</label>
@@ -1770,29 +1844,156 @@ function updateTempWidget(newTemp, zoneName, delta) {
   log(`<span class="hi">[온도]</span> 🌡️ ${prev.toFixed(1)}°C → ${newTemp.toFixed(1)}°C (${zoneName || "구역"})`);
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  SCENARIO PANEL + STRUCTURED EVENT CARDS
+// ═══════════════════════════════════════════════════════════════
+let _scTimer = null;
+
+function openScenario(situationHtml, agentNames) {
+  document.getElementById('scSituation').innerHTML = situationHtml;
+  document.getElementById('scResult').innerHTML = '<span style="color:var(--muted)">⏳ 처리 중...</span>';
+  const lbl = document.getElementById('scResultLabel');
+  lbl.textContent = '결과'; lbl.className = 'sc-label res';
+
+  const agentsEl = document.getElementById('scAgents');
+  agentsEl.innerHTML = '';
+  let delay = 0;
+  agentNames.forEach(name => {
+    if (name === '→') {
+      const arr = document.createElement('span');
+      arr.className = 'sc-arrow'; arr.textContent = '→';
+      agentsEl.appendChild(arr);
+    } else {
+      const chip = document.createElement('span');
+      chip.className = 'sc-agent'; chip.textContent = name;
+      agentsEl.appendChild(chip);
+      setTimeout(() => chip.classList.add('active'), delay);
+      delay += 700;
+    }
+  });
+
+  if (_scTimer) clearTimeout(_scTimer);
+  document.getElementById('scenarioPanel').classList.add('visible');
+}
+
+function updateScenarioResult(html, isGood) {
+  const el = document.getElementById('scResult');
+  el.innerHTML = html;
+  el.style.color = isGood ? 'var(--ok)' : 'var(--danger)';
+  const lbl = document.getElementById('scResultLabel');
+  lbl.textContent = isGood ? '✅ 결과' : '🚨 결과';
+  lbl.className = 'sc-label res' + (isGood ? '' : ' danger');
+  document.querySelectorAll('#scAgents .sc-agent').forEach(c => {
+    c.classList.remove('active'); c.classList.add('done');
+  });
+  _scTimer = setTimeout(closeScenarioPanel, 12000);
+}
+
+function closeScenarioPanel() {
+  document.getElementById('scenarioPanel').classList.remove('visible');
+}
+
+function logCard(p, ev, agentChain, cat) {
+  const area = document.getElementById('logArea');
+  const card = document.createElement('div');
+  card.className = 'event-card';
+  card.dataset.cat = cat;
+  if (logFilter !== 'all' && logFilter !== cat) card.style.display = 'none';
+
+  const zoneId  = p.assignedSeat || p.currentStage?.zone || 'study_zone';
+  const zLabel  = getZone(zoneId)?.label || zoneId;
+  const chain   = agentChain.join(' → ');
+
+  card.innerHTML = `
+    <div class="ec-row">
+      <span class="ec-tag sit">상황</span>
+      <span class="ec-ts">${fmtTime(simTime)}</span>
+      <span class="ec-body">${p.emoji} <b>${p.name}</b> (${p.age}세)
+        · <span style="color:var(--accent2)">${zLabel}</span>
+        &nbsp;"${ev.bubble}"</span>
+    </div>
+    <div class="ec-row">
+      <span class="ec-tag proc">처리</span>
+      <span class="ec-body" style="color:var(--muted)">${chain}</span>
+    </div>
+    <div class="ec-row ec-result-row">
+      <span class="ec-tag res">결과</span>
+      <span class="ec-body" style="color:var(--muted)">⏳ AI 처리 중...</span>
+    </div>`;
+
+  area.prepend(card);
+  while (area.children.length > 60) area.removeChild(area.lastChild);
+  const plain = `[${fmtTime(simTime)}] ${p.name} (${p.age}세) ${zLabel} "${ev.bubble}" → ${chain}`;
+  _logStore.unshift({ time: fmtTime(simTime), text: plain });
+  if (_logStore.length > 500) _logStore.pop();
+  return card;
+}
+
+function resolveCard(card, resultHtml, isGood) {
+  if (!card) return;
+  const row  = card.querySelector('.ec-result-row');
+  if (!row) return;
+  const tag  = row.querySelector('.ec-tag');
+  const body = row.querySelector('.ec-body');
+  if (tag)  tag.className  = 'ec-tag res' + (isGood ? '' : ' danger');
+  if (body) { body.style.color = isGood ? 'var(--ok)' : 'var(--danger)'; body.innerHTML = resultHtml; }
+}
+
+// ── Scripted demo ───────────────────────────────────────────────
+async function runDemo() {
+  if (!simRunning) return;
+  const btn = document.getElementById('demoBtn');
+  btn.disabled = true; btn.textContent = '⏳ 데모 실행 중...';
+
+  const sitting = () => personas.find(p => p.state === 'acting' && p.currentStage?.id === 'sitting');
+  const any     = () => personas[0];
+  const ev      = (arr, id) => arr.find(e => e.id === id) || arr[0];
+
+  await new Promise(r => setTimeout(r, 1500));
+  let p = sitting() || any();
+  if (p) triggerComfortEvent(p, ev(COMFORT_EVENTS, 'too_hot'));
+
+  await new Promise(r => setTimeout(r, 6000));
+  p = any();
+  if (p) triggerSafetyEvent(p, ev(SAFETY_EVENTS, 'fall_emergency'));
+
+  await new Promise(r => setTimeout(r, 7000));
+  p = sitting() || any();
+  if (p) triggerComfortEvent(p, ev(COMFORT_EVENTS, 'wifi_slow'));
+
+  btn.disabled = false; btn.textContent = '🎬 데모 시나리오';
+}
+
 // ── Comfort → full facility_graph pipeline (AI decides temp change) ──
 function triggerComfortEvent(p, ev) {
   p.speechBubble = ev.bubble; p.speechTimer = 6;
-  log(`<span class="warn">[불편]</span> ${p.emoji} ${p.name} — ${ev.bubble}`);
   _plog(p, `<span class="warn">[불편]</span> ${ev.bubble}`);
   showAlert(ev.bubble, "#ffaa47", 5);
 
-  // Animate full graph: dispatch → customer → reconcile → actuator
+  const zoneId  = p.assignedSeat || p.currentStage?.zone || "study_zone";
+  const zLabel  = getZone(zoneId)?.label || zoneId;
+
+  // Scenario panel
+  openScenario(
+    `${p.emoji} <b>${p.name}</b> (${p.age}세) · <span style="color:var(--accent2)">${zLabel}</span><br>
+     <span style="color:var(--warning)">"${ev.bubble}"</span>`,
+    ['Orchestrator', '→', 'Customer Agent', '→', 'Actuator']
+  );
+  // Structured log card
+  const card = logCard(p, ev, ['Orchestrator', 'Customer Agent', 'Actuator'], 'comfort');
+
+  // Animate graph bar
   resetGraph();
   document.getElementById("gnode-start").classList.add("active");
   setTimeout(() => activateNode("orchestrator_dispatch"), 200);
   setTimeout(() => activateNode("customer"), 900);
 
-  // No action sent — AI decides via full graph
   fetch("/persona-comfort", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      persona_name: p.name,
-      persona_age:  p.age,
-      zone_id:      p.assignedSeat || p.currentStage?.zone || "study_zone",
-      event_id:     ev.id,
-      message:      ev.message,
-      current_temp: simRoomTemp,
+      persona_name: p.name, persona_age: p.age,
+      zone_id:      zoneId, event_id: ev.id,
+      message:      ev.message, current_temp: simRoomTemp,
     }),
   })
   .then(r => r.json())
@@ -1801,38 +2002,65 @@ function triggerComfortEvent(p, ev) {
     setTimeout(() => activateNode("actuator"), 600);
     setTimeout(() => finishGraph(), 1400);
 
+    let resultParts = [];
     if (data.ok) {
       if (data.bot_message) {
         p.speechBubble = "🤖 " + data.bot_message.slice(0, 28);
         p.speechTimer  = 7;
-        log(`<span class="agent">[AI응답]</span> ${data.bot_message.slice(0, 60)}`);
         _plog(p, `<span class="agent">[AI응답]</span> ${data.bot_message.slice(0, 60)}`);
         showCanvasToast(`🤖 ${data.bot_message.slice(0, 60)}`, "ok", 7);
+        resultParts.push(data.bot_message.slice(0, 55));
       }
       const ctrl = data.ctrl_result;
       if (ctrl?.executed && ctrl.new_temp != null) {
         const delta = ctrl.delta ?? (ctrl.new_temp - simRoomTemp);
-        updateTempWidget(ctrl.new_temp, p.assignedSeat || p.currentStage?.zone, delta);
+        updateTempWidget(ctrl.new_temp, zoneId, delta);
         showCanvasToast(`🌡️ AI 온도 조정 → ${ctrl.new_temp.toFixed(1)}°C`, "ok", 5);
+        resultParts.push(`🌡️ ${simRoomTemp.toFixed(1)}°C → ${ctrl.new_temp.toFixed(1)}°C 조정`);
       }
     }
+    const resultHtml = resultParts.length ? resultParts.join('<br>') : '✓ 처리 완료';
+    resolveCard(card, resultHtml, true);
+    updateScenarioResult(resultHtml, true);
   })
-  .catch(e => { console.warn("[comfort] fetch failed:", e); finishGraph(); });
+  .catch(e => {
+    console.warn("[comfort] fetch failed:", e);
+    resolveCard(card, '⚠ 서버 연결 실패', false);
+    updateScenarioResult('⚠ 서버 연결 실패', false);
+    finishGraph();
+  });
 }
 
 // ── Safety → safety_agent pipeline ─────────────────────────────
 function triggerSafetyEvent(p, ev) {
   totalSafetyEvents++;
   p.speechBubble = ev.bubble; p.speechTimer = 8;
-  const color   = ev.severity === "high" ? "#ff4747" : "#ffaa47";
+  const isHigh  = ev.severity === "high";
+  const color   = isHigh ? "#ff4747" : "#ffaa47";
   const zoneId  = p.assignedSeat || p.currentStage?.zone || "study_zone";
   const zLabel  = getZone(zoneId)?.label || zoneId;
-  log(`<span class="danger">[⚠️안전]</span> ${p.emoji} ${p.name} — <span style="color:${color};font-weight:700">[${zLabel}]</span> ${ev.bubble}`);
+
   _plog(p, `<span class="danger">[⚠️안전]</span> <span style="color:${color};font-weight:700">[${zLabel}]</span> ${ev.bubble}`);
   showAlert(`🚨 [${zLabel}] ${ev.bubble}`, color, 8);
   highlightSafetyZone(zoneId, ev.severity, 14000);
 
-  // Animate graph: dispatch → safety
+  // Scenario panel — high severity shows escalation
+  const agents = isHigh
+    ? ['Orchestrator', '→', 'Safety Agent', '→', '에스컬레이션 ↑', '→', 'Actuator']
+    : ['Orchestrator', '→', 'Safety Agent', '→', 'Actuator'];
+  openScenario(
+    `${p.emoji} <b>${p.name}</b> (${p.age}세) · <span style="color:var(--danger)">${zLabel}</span><br>
+     <span style="color:${color};font-weight:700">${ev.bubble}</span>
+     <span style="color:var(--muted);font-size:10px;"> · 신뢰도 ${Math.round(ev.confidence * 100)}%</span>`,
+    agents
+  );
+  const card = logCard(p, ev,
+    isHigh ? ['Orchestrator', 'Safety Agent', '에스컬레이션', 'Actuator']
+           : ['Orchestrator', 'Safety Agent', 'Actuator'],
+    'safety'
+  );
+
+  // Animate graph bar
   resetGraph();
   document.getElementById("gnode-start").classList.add("active");
   setTimeout(() => activateNode("orchestrator_dispatch"), 200);
@@ -1841,11 +2069,11 @@ function triggerSafetyEvent(p, ev) {
   fetch("/persona-safety", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
-      persona_name:   p.name, persona_age:   p.age,
-      zone_id:        p.assignedSeat || p.currentStage?.zone || "study_zone",
-      event_id:       ev.id, detection_type: ev.detection_type,
-      confidence:     ev.confidence, severity: ev.severity,
-      evidence:       ev.evidence, current_temp: simRoomTemp,
+      persona_name:   p.name, persona_age: p.age,
+      zone_id:        zoneId, event_id: ev.id,
+      detection_type: ev.detection_type, confidence: ev.confidence,
+      severity:       ev.severity, evidence: ev.evidence,
+      current_temp:   simRoomTemp,
     }),
   })
   .then(r => r.json())
@@ -1857,13 +2085,22 @@ function triggerSafetyEvent(p, ev) {
     if (data.bot_message) {
       p.speechBubble = "🤖 " + data.bot_message.slice(0, 28);
       p.speechTimer  = 8;
-      log(`<span class="agent">[AI응답]</span> ${data.bot_message.slice(0, 60)}`);
       _plog(p, `<span class="agent">[AI응답]</span> ${data.bot_message.slice(0, 60)}`);
-      const cls = ev.severity === "high" ? "danger" : "warn";
+      const cls = isHigh ? "danger" : "warn";
       showCanvasToast(`🚨 ${data.bot_message.slice(0, 60)}`, cls, 8);
+      resolveCard(card, data.bot_message.slice(0, 80), !isHigh);
+      updateScenarioResult(data.bot_message.slice(0, 80), !isHigh);
+    } else {
+      resolveCard(card, '✓ 처리 완료', true);
+      updateScenarioResult('✓ 처리 완료', true);
     }
   })
-  .catch(e => { console.warn("[safety] fetch failed:", e); finishGraph(); });
+  .catch(e => {
+    console.warn("[safety] fetch failed:", e);
+    resolveCard(card, '⚠ 서버 연결 실패', false);
+    updateScenarioResult('⚠ 서버 연결 실패', false);
+    finishGraph();
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1934,6 +2171,8 @@ async function startSim() {
   Object.keys(personaLogs).forEach(k => delete personaLogs[k]);
   document.getElementById('tabFocus').disabled = true;
   switchLeftTab('list');
+  closeScenarioPanel();
+  document.getElementById('demoBtn').disabled = false;
   simRunning = true; nameIdx = 0;
   SEAT_ZONES.forEach(id => { seatOccupancy[id] = null; });
   bgCache = null; resetGraph();
@@ -1959,6 +2198,8 @@ function stopSim() {
   document.getElementById("startBtn").disabled        = false;
   document.getElementById("startBtn").textContent     = "▶ 시뮬레이션 시작";
   document.getElementById("stopBtn").style.display    = "none";
+  document.getElementById("demoBtn").disabled = true;
+  closeScenarioPanel();
   document.getElementById("statusDot").classList.add("idle");
   document.getElementById("statusText").textContent   = "정지됨";
   resetGraph();
